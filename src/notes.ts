@@ -21,7 +21,15 @@ export type NoteFile = {
   name: string;
   title: string;
   modified_ms: number;
+  line_count: number;
 };
+
+/** Logical Markdown lines; a final newline terminates the last line. */
+export function countLines(markdown: string): number {
+  if (!markdown) return 0;
+  const lines = markdown.split(/\r\n|\r|\n/);
+  return lines.length - (lines[lines.length - 1] === "" ? 1 : 0);
+}
 
 export function titleFrom(markdown: string, filename: string): string {
   for (const line of markdown.split(/\r?\n/)) {

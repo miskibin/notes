@@ -1,21 +1,39 @@
-import { Minus, Settings, Square, X } from "lucide-react";
+import { ArrowLeft, CodeXml, Minus, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "./vault-api";
 
-export function AppHeader({ title, onSettings }: { title: string; onSettings: () => void }) {
+export function AppHeader({
+  title,
+  screen,
+  onNavigate,
+  sourceMode,
+  onToggleSource,
+}: {
+  title: string;
+  screen: "notes" | "settings";
+  onNavigate: (screen: "notes" | "settings") => void;
+  sourceMode: boolean;
+  onToggleSource: () => void;
+}) {
   return (
     <header className="app-header" data-tauri-drag-region>
-      <div className="app-header-brand" data-tauri-drag-region>
-        Notes
-      </div>
-      <div className="app-header-rule" data-tauri-drag-region aria-hidden />
-      <div className="app-header-tab" title={title}>
-        <span>{title}</span>
-      </div>
+      {screen === "settings" ? (
+        <button type="button" className="app-header-mode" aria-label="Back to notes" title="Back to notes" onClick={() => onNavigate("notes")}>
+          <ArrowLeft aria-hidden />
+        </button>
+      ) : null}
+      {screen === "notes" && title ? (
+        <div className="app-header-title" title={title} data-tauri-drag-region>
+          <span>{title}</span>
+        </div>
+      ) : <span className="app-header-page" data-tauri-drag-region>{screen === "settings" ? "Settings" : ""}</span>}
       <div className="app-header-spacer" data-tauri-drag-region />
-      <button type="button" className="app-header-icon" title="Settings" aria-label="Settings" onClick={onSettings}>
-        <Settings aria-hidden />
-      </button>
+      {screen === "notes" ? (
+        <button type="button" className="app-header-mode" aria-label="Markdown source" aria-pressed={sourceMode}
+          title={`${sourceMode ? "Live preview" : "Markdown source"} (Ctrl+Shift+M)`} onClick={onToggleSource}>
+          <CodeXml aria-hidden />
+        </button>
+      ) : null}
       {isTauri() ? <WindowControls /> : null}
     </header>
   );

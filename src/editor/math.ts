@@ -1,231 +1,174 @@
-import { $inputRule, $nodeSchema, $remark, $view } from "@milkdown/kit/utils";
+import { $inputRule, $nodeSchema, $prose, $remark, $view } from "@milkdown/kit/utils";
 import { InputRule } from "@milkdown/kit/prose/inputrules";
-import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
+import { TextSelection } from "@milkdown/kit/prose/state";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import type { EditorView, NodeView } from "@milkdown/kit/prose/view";
 import katex from "katex";
 import remarkMath from "remark-math";
+import { mathEditingPlugin, mathSource, mathSpec, mathValue } from "./math-document";
 
 const mathRemark = $remark("remarkMath", () => remarkMath);
 
+// A standalone one-line $$…$$ uses the same display view as a fenced block.
+type MarkdownNode = {
+  type: string;
+  value?: string;
+  children?: MarkdownNode[];
+  position?: { start: { offset?: number }; end: { offset?: number } };
+};
+const displayMathRemark = $remark("displayMath", () => () => (tree: MarkdownNode, file: { value: unknown }) => {
+  const source = String(file.value);
+  const visit = (parent: MarkdownNode) => {
+    parent.children?.forEach((node, index) => {
+      const child = node.type === "paragraph" && node.children?.length === 1 ? node.children[0] : null;
+      if (child?.type === "inlineMath" && child.position) {
+        const raw = source.slice(child.position.start.offset, child.position.end.offset);
+        if (raw.startsWith("$$") && raw.endsWith("$$")) {
+          parent.children![index] = { type: "math", value: child.value, position: node.position };
+          return;
+        }
+      }
+      visit(node);
+    });
+  };
+  visit(tree);
+});
+
 const mathInlineSchema = $nodeSchema("math_inline", () => ({
-  group: "inline",
-  inline: true,
-  atom: true,
-  selectable: true,
-  attrs: {
-    value: { default: "" },
-  },
-  parseDOM: [
-    {
-      tag: 'span[data-type="math-inline"]',
-      getAttrs: (dom) => ({
-        value: (dom as HTMLElement).dataset.value ?? "",
-      }),
-    },
-  ],
-  toDOM: (node) => [
-    "span",
-    { "data-type": "math-inline", "data-value": node.attrs.value as string },
-  ],
+  ...mathSpec(false),
   parseMarkdown: {
     match: (node) => node.type === "inlineMath",
     runner: (state, node, type) => {
-      state.addNode(type, { value: String(node.value ?? "") });
+      state.openNode(type).addText(mathSource(String(node.value ?? ""), false)).closeNode();
     },
   },
   toMarkdown: {
     match: (node) => node.type.name === "math_inline",
     runner: (state, node) => {
-      state.addNode("inlineMath", undefined, String(node.attrs.value ?? ""));
+      const value = mathValue(node.textContent, false);
+      state.addNode(value == null ? "text" : "inlineMath", undefined, value ?? node.textContent);
     },
   },
 }));
 
 const mathBlockSchema = $nodeSchema("math_block", () => ({
-  group: "block",
-  atom: true,
-  selectable: true,
-  attrs: {
-    value: { default: "" },
-  },
-  parseDOM: [
-    {
-      tag: 'div[data-type="math-block"]',
-      getAttrs: (dom) => ({
-        value: (dom as HTMLElement).dataset.value ?? "",
-      }),
-    },
-  ],
-  toDOM: (node) => ["div", { "data-type": "math-block", "data-value": node.attrs.value as string }],
+  ...mathSpec(true),
   parseMarkdown: {
     match: (node) => node.type === "math",
     runner: (state, node, type) => {
-      state.addNode(type, { value: String(node.value ?? "") });
+      state.openNode(type).addText(mathSource(String(node.value ?? ""), true)).closeNode();
     },
   },
   toMarkdown: {
     match: (node) => node.type.name === "math_block",
     runner: (state, node) => {
-      state.addNode("math", undefined, String(node.attrs.value ?? ""));
+      const value = mathValue(node.textContent, true);
+      if (value != null) state.addNode("math", undefined, value);
+      else state.openNode("paragraph").addNode("text", undefined, node.textContent).closeNode();
     },
   },
 }));
 
-const mathInlineInput = $inputRule((ctx) => {
-  return new InputRule(/\$(?!\$)([^$\n]+)\$$/, (state, match, start, end) => {
-    const value = match[1]?.trim() ?? "";
-    if (!value) return null;
-    const before = start > 0 ? state.doc.textBetween(start - 1, start) : "";
-    if (before === "$") return null;
-    const node = mathInlineSchema.type(ctx).create({ value });
-    return state.tr.replaceWith(start, end, node);
-  });
-});
+const mathInlineInput = $inputRule((ctx) => new InputRule(/\$(?!\$)([^$\n]+)\$$/, (state, match, start, end) => {
+  const value = match[1] ?? "";
+  if (!value.trim() || (start > 0 && state.doc.textBetween(start - 1, start) === "$")) return null;
+  const node = mathInlineSchema.type(ctx).create(null, state.schema.text(mathSource(value, false)));
+  const tr = state.tr.replaceWith(start, end, node);
+  return tr.setSelection(TextSelection.create(tr.doc, start + node.nodeSize - 2));
+}));
 
-const mathBlockInput = $inputRule((ctx) => {
-  return new InputRule(/^\$\$\s$/, (state, _match, start) => {
-    const $start = state.doc.resolve(start);
-    if (!$start.parent.isTextblock) return null;
-    if ($start.parent.textContent.trim() !== "$$") return null;
-    const type = mathBlockSchema.type(ctx);
-    const from = $start.before();
-    let tr = state.tr.replaceWith(from, $start.after(), type.create({ value: "" }));
-    tr = tr.setSelection(NodeSelection.create(tr.doc, from));
-    return tr;
-  });
-});
+const mathBlockInput = $inputRule((ctx) => new InputRule(/^\$\$\s$/, (state, _match, start) => {
+  const $start = state.doc.resolve(start);
+  if ($start.parent.type.name !== "paragraph" || $start.parent.textContent.trim() !== "$$") return null;
+  const from = $start.before();
+  const node = mathBlockSchema.type(ctx).create(null, state.schema.text(mathSource("", true)));
+  const tr = state.tr.replaceWith(from, $start.after(), node);
+  return tr.setSelection(TextSelection.create(tr.doc, from + 4));
+}));
 
-function renderKatex(target: HTMLElement, value: string, display: boolean): void {
-  target.replaceChildren();
-  if (!value.trim()) {
-    target.textContent = display ? "formula" : "ƒ";
-    target.classList.add("math-empty");
-    target.classList.remove("math-invalid");
-    return;
-  }
-  try {
-    katex.render(value, target, { throwOnError: true, displayMode: display });
-    target.classList.remove("math-empty", "math-invalid");
-  } catch {
-    target.textContent = value;
-    target.classList.add("math-invalid");
-    target.classList.remove("math-empty");
-  }
-}
+const completeMathBlockInput = $inputRule((ctx) => new InputRule(/^\$\$([^\n]+)\$\$$/, (state, match, start) => {
+  const $start = state.doc.resolve(start);
+  if ($start.parent.type.name !== "paragraph") return null;
+  const from = $start.before();
+  const node = mathBlockSchema.type(ctx).create(null, state.schema.text(mathSource(match[1] ?? "", true)));
+  const tr = state.tr.replaceWith(from, $start.after(), node);
+  return tr.setSelection(TextSelection.create(tr.doc, from + node.nodeSize - 4));
+}));
 
 function createMathView(display: boolean) {
   return (node: ProseNode, view: EditorView, getPos: () => number | undefined): NodeView => {
     let current = node;
-    let editing = false;
     const dom = document.createElement(display ? "div" : "span");
     dom.className = display ? "math-block" : "math-inline";
     dom.dataset.type = display ? "math-block" : "math-inline";
     const rendered = document.createElement(display ? "div" : "span");
     rendered.className = "math-rendered";
-    const field = document.createElement(display ? "textarea" : "input");
-    field.className = "math-source";
-    field.spellcheck = false;
-    field.setAttribute("aria-label", "Formula source");
-    if (field instanceof HTMLTextAreaElement) field.rows = 1;
-    field.value = String(current.attrs.value ?? "");
-    dom.append(rendered, field);
-
-    const fit = () => {
-      if (field instanceof HTMLTextAreaElement) {
-        field.style.height = "0px";
-        field.style.height = `${field.scrollHeight}px`;
-        return;
-      }
-      field.style.width = `${Math.max(field.value.length, 1)}ch`;
-    };
+    rendered.contentEditable = "false";
+    rendered.title = "Click to edit formula";
+    const source = document.createElement(display ? "div" : "span");
+    source.className = "math-source";
+    const opening = document.createElement("span");
+    opening.className = "math-fence markdown-syntax";
+    opening.contentEditable = "false";
+    opening.textContent = display ? "$$" : "$";
+    const closing = opening.cloneNode(true) as HTMLSpanElement;
+    const preview = document.createElement(display ? "div" : "span");
+    preview.className = "math-preview";
+    preview.append(opening, rendered, closing);
+    dom.append(preview, source);
 
     const paint = () => {
-      field.hidden = !editing;
-      rendered.hidden = editing;
-      if (editing) {
-        field.value = String(current.attrs.value ?? "");
-        fit();
+      const value = mathValue(current.textContent, display);
+      rendered.replaceChildren();
+      if (value == null || !value.trim()) {
+        rendered.textContent = current.textContent;
         return;
       }
-      renderKatex(rendered, String(current.attrs.value ?? ""), display);
-    };
-
-    const commit = () => {
-      const pos = getPos();
-      if (pos == null) return;
-      const value = field.value;
-      if (value === current.attrs.value) return;
-      view.dispatch(view.state.tr.setNodeAttribute(pos, "value", value));
-    };
-
-    let composing = false;
-    field.addEventListener("compositionstart", () => {
-      composing = true;
-    });
-    field.addEventListener("compositionend", () => {
-      composing = false;
-      fit();
-      commit();
-    });
-    field.addEventListener("input", () => {
-      fit();
-      if (!composing) commit();
-    });
-    field.addEventListener("blur", () => {
-      commit();
-      editing = false;
-      paint();
-    });
-    field.addEventListener("keydown", (event) => {
-      const key = (event as KeyboardEvent).key;
-      if (key === "Escape" || (!display && key === "Enter")) {
-        event.preventDefault();
-        commit();
-        const pos = getPos();
-        field.blur();
-        if (pos == null) return;
-        const after = pos + current.nodeSize;
-        const selection = TextSelection.near(view.state.doc.resolve(Math.min(after, view.state.doc.content.size)));
-        view.dispatch(view.state.tr.setSelection(selection));
-        view.focus();
+      try {
+        katex.render(value, rendered, { throwOnError: true, displayMode: display });
+        dom.classList.remove("math-invalid");
+        dom.removeAttribute("title");
+      } catch {
+        rendered.textContent = current.textContent;
+        dom.classList.add("math-invalid");
+        dom.title = "Invalid LaTeX — click to edit";
       }
-    });
+    };
+
     rendered.addEventListener("mousedown", (event) => {
+      const mouse = event as MouseEvent;
+      if (mouse.button !== 0 || mouse.shiftKey) return;
       event.preventDefault();
       const pos = getPos();
       if (pos == null) return;
-      view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)));
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos + (display ? 4 : 2))));
       view.focus();
     });
-
+    const editFence = (element: HTMLElement, atEnd: boolean) => {
+      element.addEventListener("mousedown", (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const pos = getPos();
+        if (pos == null) return;
+        const fence = display ? 2 : 1;
+        const from = pos + 1 + (atEnd ? current.content.size - fence : 0);
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, from + fence)));
+        view.focus();
+      });
+    };
+    editFence(opening, false);
+    editFence(closing, true);
     paint();
 
     return {
       dom,
-      ignoreMutation: () => true,
-      stopEvent: (event) => editing && event.target === field,
-      selectNode: () => {
-        editing = true;
-        paint();
-        field.focus();
-        if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
-          const end = field.value.length;
-          field.setSelectionRange(end, end);
-        }
-      },
-      deselectNode: () => {
-        commit();
-        editing = false;
-        paint();
-      },
+      contentDOM: source,
+      ignoreMutation: (mutation) => mutation.type !== "selection" && preview.contains(mutation.target),
       update: (next) => {
         if (next.type !== current.type) return false;
+        const changed = next.textContent !== current.textContent;
         current = next;
-        if (document.activeElement !== field) {
-          field.value = String(current.attrs.value ?? "");
-          paint();
-        }
+        if (changed) paint();
         return true;
       },
     };
@@ -234,13 +177,11 @@ function createMathView(display: boolean) {
 
 const mathInlineView = $view(mathInlineSchema.node, () => createMathView(false));
 const mathBlockView = $view(mathBlockSchema.node, () => createMathView(true));
+const mathEditing = $prose(() => mathEditingPlugin());
 
 export const mathPlugins = [
-  mathRemark,
-  mathInlineSchema,
-  mathInlineInput,
-  mathInlineView,
-  mathBlockSchema,
-  mathBlockInput,
-  mathBlockView,
+  mathRemark, displayMathRemark,
+  mathInlineSchema, mathInlineInput, mathInlineView,
+  mathBlockSchema, mathBlockInput, completeMathBlockInput, mathBlockView,
+  mathEditing,
 ];

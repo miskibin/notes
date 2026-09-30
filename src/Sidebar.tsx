@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Folder, FolderPlus, Plus, Search, Settings } from "lucide-react";
+import { Folder, FolderPlus, Plus, Search, Settings2 } from "lucide-react";
 import {
   ChatSidebar,
   ChatSidebarDnd,
@@ -44,7 +44,6 @@ export function Sidebar({
   active,
   query,
   saveState,
-  settingsActive,
   meta,
   onQuery,
   onOpen,
@@ -54,13 +53,13 @@ export function Sidebar({
   onDeleteMany,
   onReorder,
   onMeta,
+  screen,
   onSettings,
 }: {
   notes: NoteFile[];
   active: string | null;
   query: string;
   saveState: SaveState;
-  settingsActive: boolean;
   meta: SidebarMeta;
   onQuery: (query: string) => void;
   onOpen: (name: string) => void;
@@ -70,6 +69,7 @@ export function Sidebar({
   onDeleteMany: (names: string[]) => void;
   onReorder: (names: string[]) => void;
   onMeta: (meta: SidebarMeta) => void;
+  screen: "notes" | "settings";
   onSettings: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
@@ -79,6 +79,7 @@ export function Sidebar({
   const [notesOpen, setNotesOpen] = useState(true);
   const [closedProjects, setClosedProjects] = useState<Record<string, boolean>>({});
   const [renaming, setRenaming] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0");
@@ -87,14 +88,27 @@ export function Sidebar({
   const groups = useMemo(() => groupNotes(notes, meta, query), [notes, meta, query]);
   const byId = useMemo(() => {
     const items = new Map<string, ChatSidebarItemData>();
-    for (const note of notes) items.set(note.name, { id: note.name, title: note.title, pinned: meta.pinned.includes(note.name) });
+    for (const note of notes) items.set(note.name, noteItem(note, meta.pinned.includes(note.name)));
     return items;
   }, [notes, meta.pinned]);
 
   const openSearch = () => {
     setCollapsed(false);
     setSearching(true);
+    searchRef.current?.focus();
   };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "k" || event.isComposing) return;
+      event.preventDefault();
+      setCollapsed(false);
+      setSearching(true);
+      searchRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const addProject = () => {
     const id = crypto.randomUUID();
@@ -153,18 +167,19 @@ export function Sidebar({
       }}
       renderOverlay={(id) => {
         const item = byId.get(id);
-        return item ? <ChatSidebarItemGhost item={item} active={item.id === active} /> : null;
+        return item ? <ChatSidebarItemGhost item={item} active={item.id === active} renderContent={renderNoteContent} /> : null;
       }}
     >
       <ChatSidebar
         collapsed={collapsed}
         onCollapsedChange={setCollapsed}
         edgeZones
-        dividers
-        brand={<span className="px-1 text-sm font-medium">Notes</span>}
-        nav={
-          <>
-            <SideActionRow>
+        className="notes-sidebar"
+        widthExpanded={248}
+        widthCollapsed={52}
+        classNames={{ header: "notes-sidebar-toolbar", content: "notes-sidebar-content" }}
+        brand={
+            <SideActionRow data-tauri-drag-region>
               <SideIconBtn label="New note" onClick={onCreate}>
                 <Plus className="size-4" />
               </SideIconBtn>
@@ -175,13 +190,15 @@ export function Sidebar({
                 <FolderPlus className="size-4" />
               </SideIconBtn>
             </SideActionRow>
-            {showSearch ? (
+        }
+        nav={showSearch ? (
               <input
+                ref={searchRef}
                 autoFocus
                 value={query}
                 aria-label="Search notes"
-                placeholder="Search"
-                className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                placeholder="Search notes…"
+                className="notes-search"
                 onChange={(event) => onQuery(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") {
@@ -191,8 +208,6 @@ export function Sidebar({
                 }}
               />
             ) : null}
-          </>
-        }
         rail={
           <>
             <SideIconBtn label="New note" onClick={onCreate}>
@@ -204,35 +219,23 @@ export function Sidebar({
           </>
         }
         footer={
-          <>
-            <p className="px-2 pb-1 text-[11px] text-muted-foreground [[data-slot=chat-sidebar-rail]_&]:hidden">{status}</p>
-            <SideRow
-              icon={<Settings className="size-4" />}
-              className={
-                settingsActive
-                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground [[data-slot=chat-sidebar-rail]_&]:hidden"
-                  : "[[data-slot=chat-sidebar-rail]_&]:hidden"
-              }
-              onClick={onSettings}
-            >
+          <nav className="notes-sidebar-footer" aria-label="Workspace">
+            {saveState !== "saved" ? <p role="status" title={status} className="notes-save-status">
+              {collapsed ? (saveState === "error" ? "!" : "…") : status}
+            </p> : null}
+            {collapsed ? <SideIconBtn label="Settings" aria-current={screen === "settings" ? "page" : undefined} onClick={onSettings}>
+              <Settings2 className="size-4" />
+            </SideIconBtn> : <SideRow icon={<Settings2 className="size-4" />} aria-current={screen === "settings" ? "page" : undefined} onClick={onSettings}>
               Settings
-            </SideRow>
-            <SideIconBtn
-              label="Settings"
-              className="[[data-slot=chat-sidebar-panel]_&]:hidden"
-              onClick={onSettings}
-            >
-              <Settings className="size-4" />
-            </SideIconBtn>
-          </>
+            </SideRow>}
+          </nav>
         }
       >
-        <SidebarCollapsibleSection
+        {meta.pinned.length > 0 ? <SidebarCollapsibleSection
           title="Pinned"
           open={pinnedOpen}
           onToggle={() => setPinnedOpen((open) => !open)}
-          count={groups.pinned.length}
-          className="mb-2"
+          className="notes-pinned-section"
         >
           <NoteList
             listId={PINNED_LIST}
@@ -248,13 +251,12 @@ export function Sidebar({
             onDelete={onDelete}
             onDeleteMany={onDeleteMany}
           />
-        </SidebarCollapsibleSection>
+        </SidebarCollapsibleSection> : null}
 
-        <SidebarCollapsibleSection
+        {meta.projects.length > 0 ? <SidebarCollapsibleSection
           title="Projects"
           open={projectsOpen}
           onToggle={() => setProjectsOpen((open) => !open)}
-          count={groups.projects.length}
           className="mb-2"
         >
           {groups.projects.length === 0 ? <SidebarEmptyState>No projects yet.</SidebarEmptyState> : null}
@@ -305,7 +307,6 @@ export function Sidebar({
                 }
                 open={!closedProjects[project.id]}
                 onToggle={() => setClosedProjects((current) => ({ ...current, [project.id]: !current[project.id] }))}
-                count={project.items.length}
               >
                 <NoteList
                   listId={project.id}
@@ -323,13 +324,12 @@ export function Sidebar({
               </SidebarCollapsibleSection>
             ),
           )}
-        </SidebarCollapsibleSection>
+        </SidebarCollapsibleSection> : null}
 
         <SidebarCollapsibleSection
           title="Notes"
           open={notesOpen}
           onToggle={() => setNotesOpen((open) => !open)}
-          count={groups.loose.length}
         >
           <NoteList
             listId={NOTES_LIST}
@@ -377,7 +377,7 @@ function NoteList({
   meta: SidebarMeta;
   menuFor: (item: ChatSidebarItemData) => SidebarItemMenuAction[];
 }) {
-  const items = notes.map((note) => ({ id: note.name, title: note.title, pinned }));
+  const items = notes.map((note) => noteItem(note, pinned));
   return (
     <ChatSidebarItemList
       listId={listId}
@@ -398,8 +398,34 @@ function NoteList({
         onMeta(updated);
       }}
       getMenuActions={menuFor}
+      renderContent={renderNoteContent}
     />
   );
+}
+
+function noteItem(note: NoteFile, pinned: boolean): ChatSidebarItemData {
+  const edited = new Date(note.modified_ms);
+  const hasTime = note.modified_ms > 0;
+  const lines = note.line_count;
+  return {
+    id: note.name,
+    title: note.title,
+    pinned,
+    subtitle: pinned ? undefined : (
+      <span className="notes-note-date" title={`${hasTime ? edited.toLocaleString() + " · " : ""}${lines} ${lines === 1 ? "line" : "lines"}`}>
+        {hasTime ? <time dateTime={edited.toISOString()} title={edited.toLocaleString()}>
+          {edited.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+        </time> : <span>—</span>}
+      </span>
+    ),
+  };
+}
+
+function renderNoteContent(item: ChatSidebarItemData) {
+  return <span className={`notes-note-content${item.pinned ? " notes-note-pinned" : ""}`}>
+    <span className="notes-note-title">{item.title || "Untitled"}</span>
+    {item.subtitle != null ? <span data-slot="sidebar-item-subtitle">{item.subtitle}</span> : null}
+  </span>;
 }
 
 function ProjectNameInput({

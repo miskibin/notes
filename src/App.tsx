@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppHeader } from "./AppHeader";
 import { applyAppearance, stepTextZoom } from "./appearance";
 import { NoteCanvas } from "./editor/NoteCanvas";
+import { SourceCanvas } from "./editor/SourceCanvas";
+import type { EditorHandle } from "./editor/editor-handle";
 import type { CompleteBridge } from "./editor/autocomplete";
-import { newNoteName, retitle, titleFrom, type NoteFile } from "./notes";
+import { countLines, newNoteName, retitle, titleFrom, type NoteFile } from "./notes";
 import { readSettings, writeSettings, type Settings } from "./settings";
 import { SettingsPage } from "./SettingsPage";
 import { Sidebar } from "./Sidebar";
@@ -35,6 +37,7 @@ type SaveState = "saved" | "saving" | "error";
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => readSettings());
   const [screen, setScreen] = useState<Screen>("notes");
+  const [sourceMode, setSourceMode] = useState(false);
   const [notes, setNotes] = useState<NoteFile[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [markdown, setMarkdown] = useState("");
@@ -50,6 +53,10 @@ export default function App() {
   const settingsRef = useRef(settings);
   const activeRef = useRef(active);
   const draftRef = useRef("");
+  const savedRef = useRef("");
+  const editorHandle = useRef<EditorHandle | null>(null);
+  const columnRef = useRef<HTMLElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<number>(0);
   const bridge = useRef<CompleteBridge>({
     enabled: false,
@@ -122,10 +129,12 @@ export default function App() {
       setActive(null);
       setMarkdown("");
       draftRef.current = "";
+      savedRef.current = "";
       return;
     }
     const body = await readNote(vault, name);
     draftRef.current = body;
+    savedRef.current = body;
     setMarkdown(body);
     setActive(name);
     setSaveState("saved");
@@ -135,12 +144,16 @@ export default function App() {
     window.clearTimeout(saveTimer.current);
     const name = activeRef.current;
     const vault = settingsRef.current.vault;
-    const body = draftRef.current;
+    const body = editorHandle.current?.getMarkdown() ?? draftRef.current;
+    draftRef.current = body;
+    setMarkdown(body);
     if (!name || !vault) return;
+    if (body === savedRef.current) return;
     await writeNote(vault, name, body);
+    savedRef.current = body;
     setNotes((current) =>
       current.map((note) =>
-        note.name === name ? { ...note, title: titleFrom(body, name), modified_ms: Date.now() } : note,
+        note.name === name ? { ...note, title: titleFrom(body, name), line_count: countLines(body), modified_ms: Date.now() } : note,
       ),
     );
     setSaveState("saved");
@@ -180,7 +193,7 @@ export default function App() {
       const nameNow = activeRef.current;
       if (nameNow) {
         setNotes((current) =>
-          current.map((note) => (note.name === nameNow ? { ...note, title: titleFrom(next, nameNow) } : note)),
+          current.map((note) => (note.name === nameNow ? { ...note, title: titleFrom(next, nameNow), line_count: countLines(next) } : note)),
         );
       }
       setSaveState("saving");
@@ -192,12 +205,13 @@ export default function App() {
         void writeNote(vault, name, next)
           .then(() => {
             if (draftRef.current !== next) return;
+            savedRef.current = next;
             setSaveState("saved");
             setNotes((current) =>
               current
                 .map((note) =>
                   note.name === name
-                    ? { ...note, title: titleFrom(next, name), modified_ms: Date.now() }
+                    ? { ...note, title: titleFrom(next, name), line_count: countLines(next), modified_ms: Date.now() }
                     : note,
                 )
                 .sort((a, b) => b.modified_ms - a.modified_ms),
@@ -210,11 +224,15 @@ export default function App() {
   );
 
   const openNote = async (name: string) => {
-    if (name === activeRef.current) return;
+    if (name === activeRef.current) {
+      setScreen("notes");
+      return;
+    }
     try {
       await flush();
       const body = await readNote(settingsRef.current.vault, name);
       draftRef.current = body;
+      savedRef.current = body;
       setMarkdown(body);
       setActive(name);
       setScreen("notes");
@@ -256,7 +274,7 @@ export default function App() {
         return;
       }
       await writeNote(settingsRef.current.vault, name, next);
-      setNotes((items) => items.map((note) => (note.name === name ? { ...note, title: titleFrom(next, name) } : note)));
+      setNotes((items) => items.map((note) => (note.name === name ? { ...note, title: titleFrom(next, name), line_count: countLines(next), modified_ms: Date.now() } : note)));
     } catch (error) {
       setLoadError(errorText(error));
     }
@@ -291,10 +309,12 @@ export default function App() {
         setActive(null);
         setMarkdown("");
         draftRef.current = "";
+        savedRef.current = "";
         return;
       }
       const body = await readNote(settings.vault, next);
       draftRef.current = body;
+      savedRef.current = body;
       setMarkdown(body);
       setActive(next);
     } catch (error) {
@@ -313,24 +333,69 @@ export default function App() {
     }
   };
 
-  const headerTitle = screen === "settings" ? "Settings" : titleFrom(markdown, active ?? "Notes");
-  const toggleSettings = () => {
-    void flush().finally(() => {
-      setScreen((current) => (current === "settings" ? "notes" : "settings"));
-      if (screen !== "settings") void refreshModels(settingsRef.current.ollamaHost);
-    });
+  const headerTitle = active ? titleFrom(markdown, active) : "";
+  const toggleSource = useCallback(() => {
+    const latest = editorHandle.current?.getMarkdown();
+    if (latest != null && latest !== draftRef.current) onChange(latest);
+    setSourceMode((current) => !current);
+  }, [onChange]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (screen !== "notes" || event.isComposing || !(event.ctrlKey || event.metaKey) || !event.shiftKey || event.key.toLowerCase() !== "m") return;
+      event.preventDefault();
+      toggleSource();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [screen, toggleSource]);
+  const navigate = async (next: Screen) => {
+    if (next === screen) return;
+    try {
+      if (screen === "notes") await flush();
+      setScreen(next);
+      if (next === "settings") void refreshModels(settingsRef.current.ollamaHost);
+    } catch (error) {
+      setSaveState("error");
+      setLoadError(errorText(error));
+    }
   };
+
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    const column = columnRef.current;
+    if (!scroll || !column) return;
+    scroll.scrollTop = 0;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      // Transient scroll values stay in CSS, so scrolling never re-renders the editor.
+      const heading = scroll.querySelector<HTMLElement>(".ProseMirror h1, .cm-line");
+      const end = heading ? heading.getBoundingClientRect().bottom - scroll.getBoundingClientRect().top + scroll.scrollTop : 120;
+      const toolbar = parseFloat(getComputedStyle(column).getPropertyValue("--toolbar-height")) || 52;
+      const start = Math.max(0, end - toolbar - 28);
+      const opacity = Math.min(1, Math.max(0, (scroll.scrollTop - start) / 28));
+      column.style.setProperty("--document-title-opacity", String(opacity));
+    };
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(update);
+    };
+    update();
+    scroll.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroll.removeEventListener("scroll", onScroll);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [active, epoch, screen, sourceMode]);
 
   return (
     <div className="app">
-      <AppHeader title={headerTitle} onSettings={toggleSettings} />
       <div className="app-body">
       <Sidebar
         notes={notes}
         active={active}
         query={filter}
         saveState={saveState}
-        settingsActive={screen === "settings"}
         meta={meta}
         onQuery={setFilter}
         onOpen={(name) => void openNote(name)}
@@ -340,9 +405,12 @@ export default function App() {
         onDeleteMany={(names) => void removeNotes(names)}
         onReorder={reorderLoose}
         onMeta={commitMeta}
-        onSettings={toggleSettings}
+        screen={screen}
+        onSettings={() => void navigate("settings")}
       />
-      <main className="note-column">
+      <main className="note-column" ref={columnRef}>
+        <AppHeader title={headerTitle} screen={screen} sourceMode={sourceMode} onToggleSource={toggleSource} onNavigate={(next) => void navigate(next)} />
+        <div className={`note-scroll${screen === "settings" ? " note-scroll-settings" : ""}`} ref={scrollRef}>
         {!ready ? <p className="empty">Opening notes…</p> : null}
         {loadError ? <p className="error-line">{loadError}</p> : null}
         {ready && screen === "settings" ? (
@@ -361,19 +429,26 @@ export default function App() {
                 setScreen("notes");
               });
             }}
-            onBack={() => setScreen("notes")}
+            onBack={() => void navigate("notes")}
           />
         ) : null}
         {ready && screen === "notes" && active ? (
-          <NoteCanvas
+          sourceMode ? <SourceCanvas
+            noteKey={`${active}:${epoch}`}
+            markdown={markdown}
+            onChange={onChange}
+            editorHandle={editorHandle}
+          /> : <NoteCanvas
             noteKey={`${active}:${epoch}`}
             markdown={markdown}
             vault={settings.vault}
             bridge={bridge}
             onChange={onChange}
+            editorHandle={editorHandle}
           />
         ) : null}
         {ready && screen === "notes" && !active && !loadError ? <p className="empty">No notes yet.</p> : null}
+        </div>
       </main>
       </div>
     </div>

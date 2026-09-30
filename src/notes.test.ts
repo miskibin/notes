@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { newNoteName, retitle, titleFrom } from "./notes";
+import { countLines, newNoteName, retitle, titleFrom } from "./notes";
 
 describe("notes", () => {
+  it("counts logical lines consistently for Windows newlines and trailing newlines", () => {
+    expect(countLines("")).toBe(0);
+    expect(countLines("one\n")).toBe(1);
+    expect(countLines("one\r\n\r\ntwo\r\n")).toBe(3);
+    expect(countLines("one\n\n")).toBe(2);
+    expect(countLines("one\rtwo")).toBe(2);
+  });
   it("uses the first heading as the title", () => {
     expect(titleFrom("## Pasted heading\n\nbody", "untitled.md")).toBe("Pasted heading");
     expect(titleFrom("no heading", "untitled.md")).toBe("untitled");

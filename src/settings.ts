@@ -21,7 +21,9 @@ export const DEFAULT_SETTINGS: Settings = {
   appearanceRev: 2,
 };
 
-export function normalizeSettings(parsed: Partial<Settings> | null | undefined): Settings {
+type StoredSettings = Omit<Partial<Settings>, "appearanceRev"> & { appearanceRev?: number };
+
+export function normalizeSettings(parsed: StoredSettings | null | undefined): Settings {
   const appearance = normalizeAppearance(parsed);
   const rev = parsed?.appearanceRev ?? 0;
   return {

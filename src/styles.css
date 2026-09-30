@@ -44,50 +44,37 @@ body,
 }
 
 .app-header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 20;
   display: flex;
-  flex: none;
-  align-items: stretch;
-  height: 2.25rem;
+  align-items: center;
+  height: var(--toolbar-height);
   overflow: hidden;
-  padding-left: 8px;
-  border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
-  background: var(--header, var(--background));
+  padding-left: 22px;
+  background: var(--background);
   color: var(--header-foreground, var(--foreground));
-  font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans-stack, "Segoe UI", sans-serif);
   font-size: 13px;
   font-weight: 400;
   line-height: 1;
   user-select: none;
 }
 
-.app-header-brand {
+.app-header-title {
   display: flex;
   align-items: center;
+  min-width: 0;
+  max-width: min(480px, 65%);
   padding: 0 8px;
-  font-weight: 500;
+  color: var(--foreground);
+  opacity: var(--document-title-opacity, 0);
+  transform: translateY(calc((1 - var(--document-title-opacity, 0)) * 4px));
 }
 
-.app-header-rule {
-  align-self: center;
-  width: 1px;
-  height: 16px;
-  margin: 0 4px;
-  background: var(--border);
-}
+.app-header-page { padding-inline: 8px; color: var(--muted-foreground); }
 
-.app-header-tab {
-  display: flex;
-  align-items: center;
-  align-self: flex-end;
-  max-width: 240px;
-  height: calc(100% - 6px);
-  margin-top: 6px;
-  padding: 0 12px;
-  border-radius: 8px 8px 0 0;
-  background: var(--header-tab, var(--card));
-}
-
-.app-header-tab span {
+.app-header-title span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -98,32 +85,21 @@ body,
   min-width: 12px;
 }
 
-.app-header-icon,
 .app-header-windows button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
 }
 
-.app-header-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  margin: auto 4px auto 0;
-  border-radius: 6px;
-  color: var(--header-muted, var(--muted-foreground));
-}
-
-.app-header-icon:hover {
-  background: color-mix(in oklch, var(--header-tab, var(--card)) 70%, transparent);
-  color: var(--header-foreground, var(--foreground));
-}
-
-.app-header-icon svg,
 .app-header-windows svg {
+  display: block;
+  flex: none;
   width: 14px;
   height: 14px;
 }
@@ -131,10 +107,12 @@ body,
 .app-header-windows {
   display: flex;
   align-items: stretch;
+  height: 100%;
 }
 
 .app-header-windows button {
   width: 44px;
+  height: 100%;
   color: var(--header-foreground, var(--foreground));
 }
 
@@ -147,11 +125,111 @@ body,
   color: white;
 }
 
+.app-header-windows button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -3px;
+}
+
+.notes-sidebar {
+  border-right-color: color-mix(in oklch, var(--sidebar-border) 35%, transparent);
+  background: color-mix(in oklch, var(--background) 97%, var(--foreground));
+  --sidebar-accent: var(--muted);
+  --sidebar-accent-foreground: var(--foreground);
+}
+
+.notes-sidebar-toolbar {
+  height: var(--toolbar-height, 52px);
+  flex: none;
+  padding: 0 12px;
+}
+
+.notes-sidebar [data-slot="sidebar-icon-button"] { border-radius: 6px; }
+.notes-sidebar [data-slot="sidebar-icon-button"] svg { stroke-width: 1.6; }
+.notes-sidebar-content { padding: 20px 12px 12px; }
+.notes-sidebar [data-slot="sidebar-section"] + [data-slot="sidebar-section"] { margin-top: 24px; }
+.notes-sidebar [data-slot="sidebar-section-trigger"] {
+  padding: 5px 10px 9px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: color-mix(in oklch, var(--muted-foreground) 85%, var(--background));
+}
+.notes-sidebar [data-slot="sidebar-section-trigger"] > span > svg {
+  order: 1;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.notes-sidebar [data-slot="sidebar-section-trigger"]:is(:hover, :focus-visible) > span > svg,
+.notes-sidebar [data-slot="sidebar-section-trigger"][data-state="closed"] > span > svg { opacity: 1; }
+.notes-sidebar [data-slot="sidebar-item-button"] {
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 400;
+  border-radius: 6px;
+  color: color-mix(in oklch, var(--foreground) 80%, var(--muted-foreground));
+}
+.notes-sidebar [data-slot="sidebar-item-button"][data-active="true"] {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+  font-weight: 500;
+}
+.notes-sidebar [data-slot="sidebar-item-list"] { gap: 3px; }
+.notes-note-content { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+.notes-note-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 20px; }
+.notes-note-content [data-slot="sidebar-item-subtitle"] {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 15px;
+}
+.notes-sidebar .notes-pinned-section [data-slot="sidebar-item-button"] { padding-block: 7px; }
+.notes-sidebar [data-slot="sidebar-item-actions"] { padding-left: 5px; }
+.notes-sidebar-footer { display: flex; flex-direction: column; gap: 8px; }
+.notes-sidebar-footer [data-slot="sidebar-row"] { padding: 8px 10px; color: var(--muted-foreground); font-size: 12px; }
+.notes-sidebar-footer [data-slot="sidebar-row"][aria-current="page"] { background: var(--sidebar-accent); color: var(--foreground); }
+.notes-sidebar [data-slot="chat-sidebar-footer"] { padding: 12px; }
+.notes-save-status { margin: 0; padding-inline: 10px; font-size: 11px; color: var(--muted-foreground); }
+.notes-search {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  margin-block: 4px;
+  border: 1px solid color-mix(in oklch, var(--border) 65%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.notes-search:focus-visible { border-color: var(--muted-foreground); }
+
+.app { --toolbar-height: 52px; }
 .note-column {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  --document-title-opacity: 0;
+}
+
+.note-scroll {
+  height: 100%;
   overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding-top: calc(var(--toolbar-height) + 32px);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 28%, transparent) transparent;
+  /* The document fades into the toolbar, including selections and source mode. */
+  mask-image: linear-gradient(to bottom, transparent 0, transparent calc(var(--toolbar-height) - 8px), #000 calc(var(--toolbar-height) + 28px));
+}
+
+.note-canvas,
+.source-canvas,
+.note-scroll-settings {
+  padding-top: var(--toolbar-height);
 }
 
 .note-canvas,
@@ -201,96 +279,22 @@ body,
   font-family: var(--font-sans-stack, "Segoe UI", sans-serif);
   font-size: calc(var(--ui-root-font-size, 16px) * var(--ui-zoom, 1));
   font-weight: var(--ui-fw-normal, 400);
+  line-height: 1.75;
 }
 
-.note-canvas .milkdown .ProseMirror :is(h1, h2, h3, h4, h5, h6)::before,
-.note-canvas .milkdown .ProseMirror strong::before,
-.note-canvas .milkdown .ProseMirror strong::after,
-.note-canvas .milkdown .ProseMirror em::before,
-.note-canvas .milkdown .ProseMirror em::after,
-.note-canvas .milkdown .ProseMirror s::before,
-.note-canvas .milkdown .ProseMirror s::after,
-.note-canvas .milkdown .ProseMirror del::before,
-.note-canvas .milkdown .ProseMirror del::after,
-.note-canvas .milkdown .ProseMirror :not(pre) > code::before,
-.note-canvas .milkdown .ProseMirror :not(pre) > code::after,
-.note-canvas .milkdown .ProseMirror a::before,
-.note-canvas .milkdown .ProseMirror a::after {
-  color: var(--muted-foreground);
-  font-family: var(--font-sans-stack, "Segoe UI", sans-serif);
-  font-style: normal;
-  font-weight: 400;
-  font-size: 0.85em;
-  letter-spacing: 0;
-  text-decoration: none;
-  user-select: none;
-  pointer-events: none;
+.note-canvas .milkdown .ProseMirror > :first-child,
+.note-canvas .milkdown .ProseMirror > h1:first-of-type { margin-top: 0; }
+.note-canvas .milkdown .ProseMirror h1 {
+  margin-bottom: 0.65em;
+  font-size: 2.25em;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.035em;
 }
-
-.note-canvas .milkdown .ProseMirror h1::before { content: "#"; margin-right: 0.45em; }
-.note-canvas .milkdown .ProseMirror h2::before { content: "##"; margin-right: 0.45em; }
-.note-canvas .milkdown .ProseMirror h3::before { content: "###"; margin-right: 0.45em; }
-.note-canvas .milkdown .ProseMirror h4::before { content: "####"; margin-right: 0.45em; }
-.note-canvas .milkdown .ProseMirror h5::before { content: "#####"; margin-right: 0.45em; }
-.note-canvas .milkdown .ProseMirror h6::before { content: "######"; margin-right: 0.45em; }
-
-.note-canvas .milkdown .ProseMirror blockquote::after {
-  content: ">";
-  position: absolute;
-  left: 14px;
-  top: 0;
-  color: var(--muted-foreground);
-  font-weight: 400;
-  line-height: 1.5;
-  pointer-events: none;
-  user-select: none;
-}
-
-.note-canvas .milkdown .ProseMirror hr::after {
-  content: "---";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  padding-right: 0.45em;
-  background: var(--background);
-  color: var(--muted-foreground);
-  font-weight: 400;
-  line-height: 1;
-  pointer-events: none;
-  user-select: none;
-}
-
-.note-canvas .milkdown .ProseMirror strong::before,
-.note-canvas .milkdown .ProseMirror em::before,
-.note-canvas .milkdown .ProseMirror s::before,
-.note-canvas .milkdown .ProseMirror del::before,
-.note-canvas .milkdown .ProseMirror :not(pre) > code::before,
-.note-canvas .milkdown .ProseMirror a::before {
-  margin-right: 0.05em;
-}
-
-.note-canvas .milkdown .ProseMirror strong::after,
-.note-canvas .milkdown .ProseMirror em::after,
-.note-canvas .milkdown .ProseMirror s::after,
-.note-canvas .milkdown .ProseMirror del::after,
-.note-canvas .milkdown .ProseMirror :not(pre) > code::after,
-.note-canvas .milkdown .ProseMirror a::after {
-  margin-left: 0.05em;
-}
-
-.note-canvas .milkdown .ProseMirror strong::before { content: "**"; }
-.note-canvas .milkdown .ProseMirror strong::after { content: "**"; }
-.note-canvas .milkdown .ProseMirror em::before { content: "*"; }
-.note-canvas .milkdown .ProseMirror em::after { content: "*"; }
-.note-canvas .milkdown .ProseMirror s::before,
-.note-canvas .milkdown .ProseMirror del::before { content: "~~"; }
-.note-canvas .milkdown .ProseMirror s::after,
-.note-canvas .milkdown .ProseMirror del::after { content: "~~"; }
-.note-canvas .milkdown .ProseMirror :not(pre) > code::before { content: "`"; background: none; }
-.note-canvas .milkdown .ProseMirror :not(pre) > code::after { content: "`"; background: none; }
-.note-canvas .milkdown .ProseMirror a::before { content: "["; }
-.note-canvas .milkdown .ProseMirror a::after { content: "](" attr(href) ")"; }
+.note-canvas .milkdown .ProseMirror h2 { margin-top: 1.8em; font-size: 1.45em; line-height: 1.35; font-weight: 600; letter-spacing: -0.025em; }
+.note-canvas .milkdown .ProseMirror h3 { font-size: 1.1em; font-weight: 600; letter-spacing: -0.01em; }
+.note-canvas .milkdown .ProseMirror p { line-height: 1.75; }
+.note-canvas .ProseMirror h1::before { display: none; }
 
 .note-canvas .milkdown .milkdown-list-item-block li .label-wrapper,
 .note-canvas .milkdown .milkdown-list-item-block li .label-wrapper .label {
@@ -299,16 +303,47 @@ body,
   color: var(--muted-foreground);
 }
 
+/* Formatting hints stay visible and muted in the formatted editor. The full
+   editable Markdown is also available through the source switch. */
+.note-canvas .ProseMirror :is(h1, h2, h3, h4, h5, h6)::before,
+.note-canvas .ProseMirror :is(strong, em, s, del, a)::before,
+.note-canvas .ProseMirror :is(strong, em, s, del, a)::after,
+.note-canvas .ProseMirror :not(pre) > code::before,
+.note-canvas .ProseMirror :not(pre) > code::after {
+  color: var(--muted-foreground);
+  font: 400 0.85em var(--font-sans-stack, "Segoe UI", sans-serif);
+  text-decoration: none;
+  pointer-events: none;
+  user-select: none;
+}
+.note-canvas .ProseMirror h1::before { content: "# "; }
+.note-canvas .ProseMirror h2::before { content: "## "; }
+.note-canvas .ProseMirror h3::before { content: "### "; }
+.note-canvas .ProseMirror h4::before { content: "#### "; }
+.note-canvas .ProseMirror h5::before { content: "##### "; }
+.note-canvas .ProseMirror h6::before { content: "###### "; }
+.note-canvas .ProseMirror strong::before,
+.note-canvas .ProseMirror strong::after { content: "**"; }
+.note-canvas .ProseMirror em::before,
+.note-canvas .ProseMirror em::after { content: "*"; }
+.note-canvas .ProseMirror :is(s, del)::before,
+.note-canvas .ProseMirror :is(s, del)::after { content: "~~"; }
+.note-canvas .ProseMirror :not(pre) > code::before,
+.note-canvas .ProseMirror :not(pre) > code::after { content: "`"; }
+.note-canvas .ProseMirror a::before { content: "["; }
+.note-canvas .ProseMirror a::after { content: "](" attr(href) ")"; }
+
 .note-canvas .milkdown .milkdown-list-item-block li .label-wrapper .label.ordered::after {
   content: ".";
 }
 
 .chart-block {
-  margin: 0.75em 0;
-  padding: 8px 10px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
+  position: relative;
+  margin: 1em 0 1.5em;
+  padding: 16px 12px 8px;
+  border: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--card) 45%, transparent);
 }
 
 .chart-block .chart-mount {
@@ -334,10 +369,37 @@ body,
 }
 
 .chart-block .chart-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 6px;
+  gap: 4px;
+  margin: 0;
+  padding: 4px;
+  border-radius: 6px;
+  background: var(--card);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+.chart-block:is(:hover, :focus-within) .chart-actions { opacity: 1; pointer-events: auto; }
+.chart-block .chart-actions button:disabled { opacity: 0.4; cursor: default; }
+
+.note-canvas .milkdown .milkdown-table-block { margin-block: 1.5em; }
+.note-canvas .milkdown .milkdown-table-block :is(th, td) {
+  border: 0;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  padding: 8px 14px;
+}
+.note-canvas .milkdown .milkdown-table-block th { background: color-mix(in oklch, var(--muted) 50%, transparent); }
+.note-canvas .milkdown .ProseMirror blockquote { padding-left: 20px; color: var(--muted-foreground); }
+.note-canvas .milkdown .ProseMirror blockquote::before { width: 2px; background: var(--border); }
+
+@media (hover: none) {
+  .chart-block .chart-actions { position: static; opacity: 1; pointer-events: auto; margin-top: 8px; }
 }
 
 .chart-block .chart-actions button,
@@ -394,89 +456,72 @@ body,
   display: none;
 }
 
-.note-canvas .math-source[hidden],
-.note-canvas .math-rendered[hidden] {
-  display: none !important;
-}
-
-.note-canvas .katex-display {
-  overflow: visible !important;
-  margin: 0.4em 0;
-  text-align: left;
-}
-
-.note-canvas .katex-display > .katex {
-  text-align: left;
-}
-
-.note-canvas .math-block {
-  margin: 0.6em 0;
-}
-
 .note-canvas .math-source {
-  display: block;
-  width: 100%;
-  margin: 0;
+  display: none;
+  color: var(--foreground);
+  font-family: var(--font-mono-stack, Consolas, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.note-canvas .math-editing > .math-source { display: inline; }
+.note-canvas .math-block.math-editing > .math-source { display: block; }
+.note-canvas .math-editing > .math-preview { display: none; }
+.note-canvas .math-preview { display: inline-flex; align-items: baseline; gap: 0.15em; }
+.note-canvas .math-block .math-preview { display: inline-flex; align-items: center; gap: 0.5em; max-width: 100%; }
+.note-canvas .math-block.math-editing > .math-preview { display: none; }
+.note-canvas .math-block .math-rendered { flex: none; min-width: 0; }
+.note-canvas .markdown-syntax { color: var(--muted-foreground); font-weight: 400; }
+.note-canvas .math-rendered { cursor: text; }
+.note-canvas .math-block { margin: 0.75em 0; line-height: 1.5; }
+.note-canvas .math-block .math-rendered { overflow: visible; }
+.note-canvas .katex-display { margin: 0.5em 0; text-align: center; }
+.note-canvas .math-invalid { color: var(--destructive); }
+.note-canvas .math-invalid > .math-source { display: inline; }
+.note-canvas .math-block.math-invalid > .math-source { display: block; }
+.note-canvas .math-invalid > .math-preview { display: none; }
+
+.app-header-mode {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  margin: auto 4px;
   padding: 0;
   border: 0;
-  resize: none;
-  overflow: hidden;
+  border-radius: 4px;
   background: transparent;
-  color: inherit;
-  caret-color: var(--foreground);
+  color: var(--header-muted, var(--muted-foreground));
+  cursor: pointer;
+}
+.app-header-mode svg { width: 16px; height: 16px; }
+.app-header-mode:hover,
+.app-header-mode[aria-pressed="true"] { background: var(--muted); color: var(--foreground); }
+.app-header-mode:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+
+.source-canvas {
+  max-width: var(--note-max-width, none);
+  margin-inline: auto;
+  padding: calc(var(--toolbar-height) + var(--note-pad-y, 28px) * var(--ui-zoom, 1)) calc(var(--note-pad-x, 48px) * var(--ui-zoom, 1)) 30vh;
+}
+.source-canvas .cm-editor { background: transparent; color: var(--foreground); }
+.source-canvas .cm-editor.cm-focused { outline: none; }
+.source-canvas .cm-scroller {
   font-family: var(--font-mono-stack, Consolas, monospace);
-  line-height: 1.4;
+  font-size: calc(var(--ui-root-font-size, 16px) * var(--ui-zoom, 1));
+  line-height: 1.6;
+  overflow: visible;
 }
-
-.note-canvas .math-inline .math-source {
-  display: inline-block;
-  width: auto;
-  min-width: 1ch;
-}
-
-.note-canvas .math-empty,
-.note-canvas .math-invalid {
-  color: var(--muted-foreground);
-  font-family: var(--font-mono-stack, Consolas, monospace);
-}
-
-.note-canvas .math-inline::before,
-.note-canvas .math-inline::after,
-.note-canvas .math-block::before,
-.note-canvas .math-block::after {
-  color: var(--muted-foreground);
-  font-family: var(--font-sans-stack, "Segoe UI", sans-serif);
-  font-weight: 400;
-  font-style: normal;
-  user-select: none;
-  pointer-events: none;
-}
-
-.note-canvas .math-inline::before,
-.note-canvas .math-inline::after {
-  content: "$";
-}
-
-.note-canvas .math-block {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4em;
-  width: fit-content;
-  max-width: 100%;
-}
-
-.note-canvas .math-block::before,
-.note-canvas .math-block::after {
-  content: "$$";
-  flex: none;
-}
-
-.note-canvas .math-block .math-rendered,
-.note-canvas .math-block .math-source {
-  flex: 1 1 auto;
-  min-width: 1ch;
-}
-
+.source-canvas .cm-content { min-height: 60vh; padding: 0; caret-color: var(--foreground); }
+.source-canvas .cm-line { padding: 0; }
+.source-canvas .cm-markdown-syntax { color: var(--muted-foreground) !important; }
+.source-canvas .cm-selectionBackground,
+.source-canvas .cm-focused .cm-selectionBackground { background: var(--accent); }
+.source-canvas .cm-cursor { border-left-color: var(--foreground); }
+.source-canvas .cm-panels { background: var(--card); color: var(--foreground); }
+.source-canvas .cm-textfield { background: var(--background); color: var(--foreground); border-color: var(--border); }
 .inline-edit {
   position: fixed;
   z-index: 40;
@@ -537,7 +582,7 @@ body,
 
 .empty,
 .error-line {
-  margin: 12px 16px;
+  margin: calc(var(--toolbar-height) + 28px) 32px 12px;
   color: var(--muted-foreground);
 }
 
@@ -648,4 +693,19 @@ body,
 .note-canvas .milkdown .milkdown-slash-menu .menu-groups .menu-group + .menu-group::before {
   margin: 4px 8px;
   background: var(--border);
+}
+
+@media (max-width: 900px) {
+  .notes-sidebar[data-collapsed="false"] { width: 220px !important; }
+  .note-canvas .milkdown .ProseMirror { padding-inline: 32px; }
+  .source-canvas { padding-inline: 32px; }
+}
+
+@media (max-width: 600px) {
+  .notes-sidebar[data-collapsed="false"] { width: 180px !important; }
+  .notes-sidebar-toolbar { padding-inline: 6px; }
+  .notes-sidebar-content { padding-inline: 6px; }
+  .note-canvas .milkdown .ProseMirror { padding-inline: 20px; }
+  .source-canvas { padding-inline: 20px; }
+  .app-header { padding-left: 12px; }
 }

@@ -12,8 +12,7 @@ type Session = Range & { text: string };
 const editKey = new PluginKey<Range | null>("note-inline-edit");
 
 function leafText(node: ProseNode): string {
-  if (node.type.name === "math_inline") return `$${String(node.attrs.value ?? "")}$`;
-  if (node.type.name === "math_block") return `$$${String(node.attrs.value ?? "")}$$`;
+  if (node.type.name === "math_inline" || node.type.name === "math_block") return node.textContent;
   return "";
 }
 
@@ -69,7 +68,7 @@ function applyReplacement(
   const $to = view.state.doc.resolve(to);
   const inCode =
     $from.sameParent($to) &&
-    ($from.parent.type.name === "code_block" || $from.parent.type.name === "code_inline");
+    Boolean($from.parent.type.spec.code);
   if (!inCode && editAsMarkdown(text)) {
     try {
       const parsed = parse(text);

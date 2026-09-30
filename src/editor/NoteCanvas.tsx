@@ -1,5 +1,7 @@
 import type { MilkdownPlugin } from "@milkdown/ctx";
-import { editorViewOptionsCtx } from "@milkdown/kit/core";
+import { editorViewCtx, editorViewOptionsCtx } from "@milkdown/kit/core";
+import type { Node as ProseNode } from "@milkdown/kit/prose/model";
+import { getMarkdown } from "@milkdown/kit/utils";
 import { CrepeBuilder } from "@milkdown/crepe/builder";
 import { blockEdit } from "@milkdown/crepe/feature/block-edit";
 import { cursor } from "@milkdown/crepe/feature/cursor";
@@ -19,6 +21,7 @@ import { inlineEdit } from "./inline-edit";
 import { mathPlugins } from "./math";
 import { markdownPaste } from "./paste";
 import { editorShortcuts } from "./shortcuts";
+import type { EditorHandleRef } from "./editor-handle";
 
 export function NoteCanvas({
   noteKey,
@@ -26,12 +29,14 @@ export function NoteCanvas({
   vault,
   bridge,
   onChange,
+  editorHandle,
 }: {
   noteKey: string;
   markdown: string;
   vault: string;
   bridge: { current: CompleteBridge };
   onChange: (markdown: string) => void;
+  editorHandle: EditorHandleRef;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onChangeRef = useRef(onChange);
@@ -78,7 +83,7 @@ export function NoteCanvas({
       .config((ctx) => {
         ctx.update(editorViewOptionsCtx, (prev) => ({
           ...prev,
-          attributes: { spellcheck: "false" },
+          attributes: { spellcheck: "false", "aria-label": "Note editor" },
         }));
       })
       .use(flatPlugins(mathPlugins))
@@ -88,10 +93,11 @@ export function NoteCanvas({
       .use(inlineEdit(bridgeRef.current))
       .use(editorShortcuts());
     let ready = false;
+    let initialDoc: ProseNode | null = null;
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, next, prev) => {
         if (!ready || cancelled || next === prev) return;
-        onChangeRef.current(next);
+        onChangeRef.current(handle.getMarkdown());
       });
     });
     const stopHandles = attachHandleDelay(host);
@@ -100,16 +106,26 @@ export function NoteCanvas({
       const href = anchor?.getAttribute("href");
       if (!anchor || !href || href.startsWith("#")) return;
       event.preventDefault();
-      if (isTauri()) void openUrl(href);
-      else window.open(href, "_blank", "noopener");
+      if (event.ctrlKey || event.metaKey) {
+        if (isTauri()) void openUrl(href);
+        else window.open(href, "_blank", "noopener");
+      }
     };
     host.addEventListener("click", onClick);
     const created = crepe.create().then(() => {
+      if (cancelled) return;
+      initialDoc = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.doc);
       ready = true;
+      editorHandle.current = handle;
     });
+    const handle = { getMarkdown: () => crepe.editor.action((ctx) => {
+      if (initialDoc?.eq(ctx.get(editorViewCtx).state.doc)) return markdown;
+      return getMarkdown()(ctx);
+    }) };
     return () => {
       cancelled = true;
       ready = false;
+      if (editorHandle.current === handle) editorHandle.current = null;
       stopHandles();
       host.removeEventListener("click", onClick);
       void created.finally(() => {

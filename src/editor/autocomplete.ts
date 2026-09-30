@@ -25,7 +25,7 @@ function blockContext(view: EditorView): { before: string; after: string; code: 
   return {
     before: parent.textBetween(0, selection.$from.parentOffset, "\n", "\ufffc"),
     after: parent.textBetween(selection.$from.parentOffset, parent.content.size, "\n", "\ufffc"),
-    code: name === "code_block" || name === "code_inline",
+    code: name === "code_block" || name === "code_inline" || name === "math_block" || name === "math_inline",
   };
 }
 

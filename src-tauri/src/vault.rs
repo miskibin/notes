@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -10,6 +10,7 @@ pub struct NoteFile {
     pub name: String,
     pub title: String,
     pub modified_ms: u64,
+    pub line_count: usize,
 }
 
 pub fn note_file_name(name: &str) -> Result<String, String> {
@@ -74,12 +75,12 @@ fn markdown_title(head: &str, filename: &str) -> String {
     filename.trim_end_matches(".md").to_string()
 }
 
-fn title_of(path: &Path, filename: &str) -> String {
-    let Ok(bytes) = fs::read(path) else {
-        return filename.trim_end_matches(".md").to_string();
-    };
-    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]);
-    markdown_title(&head, filename)
+fn markdown_line_count(body: &str) -> usize {
+    if body.is_empty() {
+        return 0;
+    }
+    let normalized = body.replace("\r\n", "\n").replace('\r', "\n");
+    normalized.split('\n').count() - usize::from(normalized.ends_with('\n'))
 }
 
 #[tauri::command]
@@ -115,10 +116,13 @@ pub fn list_notes(vault: String) -> Result<Vec<NoteFile>, String> {
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
             .unwrap_or(0);
+        let bytes = fs::read(&path).map_err(|err| err.to_string())?;
+        let body = String::from_utf8_lossy(&bytes);
         notes.push(NoteFile {
-            title: title_of(&path, name),
+            title: markdown_title(&body, name),
             name: name.to_string(),
             modified_ms,
+            line_count: markdown_line_count(&body),
         });
     }
     notes.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms).then(a.title.cmp(&b.title)));
@@ -199,7 +203,16 @@ pub fn read_asset(vault: String, relative: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{asset_file_name, image_ext, markdown_title, note_file_name};
+    use super::{asset_file_name, image_ext, markdown_line_count, markdown_title, note_file_name};
+
+    #[test]
+    fn line_count_handles_windows_and_trailing_newlines() {
+        assert_eq!(markdown_line_count(""), 0);
+        assert_eq!(markdown_line_count("one\n"), 1);
+        assert_eq!(markdown_line_count("one\r\n\r\ntwo\r\n"), 3);
+        assert_eq!(markdown_line_count("one\n\n"), 2);
+        assert_eq!(markdown_line_count("one\rtwo"), 2);
+    }
 
     #[test]
     fn note_names_stay_in_the_vault_root() {

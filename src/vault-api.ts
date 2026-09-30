@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { WELCOME_NOTE, titleFrom, type NoteFile } from "./notes";
+import { WELCOME_NOTE, countLines, titleFrom, type NoteFile } from "./notes";
 
 export type CompletionResult = {
   text: string;
@@ -8,6 +8,7 @@ export type CompletionResult = {
 };
 
 const memoryNotes = new Map<string, string>();
+const memoryModified = new Map<string, number>();
 const assetCache = new Map<string, string>();
 
 export function isTauri(): boolean {
@@ -15,7 +16,10 @@ export function isTauri(): boolean {
 }
 
 function ensureBrowserVault(): void {
-  if (!memoryNotes.has("welcome.md")) memoryNotes.set("welcome.md", WELCOME_NOTE);
+  if (!memoryNotes.has("welcome.md")) {
+    memoryNotes.set("welcome.md", WELCOME_NOTE);
+    memoryModified.set("welcome.md", Date.now());
+  }
 }
 
 export async function defaultVaultDir(): Promise<string> {
@@ -40,7 +44,8 @@ export async function listNotes(vault: string): Promise<NoteFile[]> {
       .map(([name, body]) => ({
         name,
         title: titleFrom(body, name),
-        modified_ms: 0,
+        modified_ms: memoryModified.get(name) ?? 0,
+        line_count: countLines(body),
       }))
       .sort((a, b) => a.title.localeCompare(b.title));
   }
@@ -60,6 +65,7 @@ export async function readNote(vault: string, name: string): Promise<string> {
 export async function writeNote(vault: string, name: string, body: string): Promise<void> {
   if (!isTauri()) {
     memoryNotes.set(name, body);
+    memoryModified.set(name, Date.now());
     return;
   }
   await invoke("write_note", { vault, name, body });
@@ -68,6 +74,7 @@ export async function writeNote(vault: string, name: string, body: string): Prom
 export async function deleteNote(vault: string, name: string): Promise<void> {
   if (!isTauri()) {
     memoryNotes.delete(name);
+    memoryModified.delete(name);
     return;
   }
   await invoke("delete_note", { vault, name });

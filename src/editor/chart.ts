@@ -106,6 +106,10 @@ class ChartView implements NodeView {
       window.clearTimeout(this.timer);
       this.timer = window.setTimeout(() => this.commitSource(), 180);
     });
+    this.textarea.addEventListener("blur", () => {
+      window.clearTimeout(this.timer);
+      this.commitSource();
+    });
     reset.addEventListener("click", () => void this.render(this.textarea.value));
     this.saveButton.addEventListener("click", () => this.saveDefaults());
 
@@ -204,10 +208,31 @@ class ChartView implements NodeView {
     this.message.textContent = "";
     try {
       const mode = document.documentElement.dataset.colorMode === "light" ? undefined : "dark";
+      const tokens = getComputedStyle(document.documentElement);
+      const muted = tokens.getPropertyValue("--muted-foreground").trim();
+      const border = tokens.getPropertyValue("--border").trim();
       const result = await embed(this.mount, compiled.spec as never, {
         actions: false,
         renderer: "svg",
         theme: mode,
+        config: {
+          background: "transparent",
+          view: { stroke: null },
+          axis: {
+            labelColor: muted,
+            titleColor: muted,
+            labelFont: "Segoe UI",
+            titleFont: "Segoe UI",
+            titleFontWeight: "normal",
+            gridColor: border,
+            gridOpacity: 0.5,
+            domain: false,
+            ticks: false,
+            labelPadding: 8,
+            titlePadding: 12,
+          },
+          legend: { labelColor: muted, titleColor: muted },
+        },
       });
       if (token !== this.token) {
         result.finalize();

@@ -3,9 +3,9 @@ import type { NoteFile } from "./notes";
 import { assignNote, createProject, groupNotes, moveNote, togglePin, type SidebarMeta } from "./sidebar-meta";
 
 const notes: NoteFile[] = [
-  { name: "a.md", title: "Alpha", modified_ms: 2 },
-  { name: "b.md", title: "Beta", modified_ms: 1 },
-  { name: "c.md", title: "Gamma", modified_ms: 3 },
+  { name: "a.md", title: "Alpha", modified_ms: 2, line_count: 1 },
+  { name: "b.md", title: "Beta", modified_ms: 1, line_count: 1 },
+  { name: "c.md", title: "Gamma", modified_ms: 3, line_count: 1 },
 ];
 
 const empty: SidebarMeta = { pinned: [], projects: [] };
