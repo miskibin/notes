@@ -1,0 +1,108 @@
+:root[data-ui-font="system"] {
+  --font-sans-stack: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono-stack: Consolas, ui-monospace, monospace;
+}
+:root[data-ui-font="roboto"] {
+  --font-sans-stack: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono-stack: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+:root[data-ui-font="inter"] {
+  --font-sans-stack: Inter, "Segoe UI", sans-serif;
+  --font-mono-stack: "JetBrains Mono", Consolas, monospace;
+}
+:root[data-ui-font="ibm-plex"] {
+  --font-sans-stack: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-mono-stack: "IBM Plex Mono", Consolas, monospace;
+}
+:root[data-ui-font="figtree"] {
+  --font-sans-stack: Figtree, "Segoe UI", sans-serif;
+  --font-mono-stack: "JetBrains Mono", Consolas, monospace;
+}
+:root[data-ui-font="geist"] {
+  --font-sans-stack: Geist, "Segoe UI", sans-serif;
+  --font-mono-stack: "Geist Mono", Consolas, monospace;
+}
+
+:root[data-ui-mono="system"] {
+  --font-mono-stack: Consolas, ui-monospace, monospace;
+}
+:root[data-ui-mono="roboto-mono"] {
+  --font-mono-stack: "Roboto Mono", Consolas, monospace;
+}
+:root[data-ui-mono="jetbrains"] {
+  --font-mono-stack: "JetBrains Mono", Consolas, monospace;
+}
+:root[data-ui-mono="ibm-plex-mono"] {
+  --font-mono-stack: "IBM Plex Mono", Consolas, monospace;
+}
+:root[data-ui-mono="geist-mono"] {
+  --font-mono-stack: "Geist Mono", Consolas, monospace;
+}
+
+:root[data-ui-font-size="compact"] {
+  --ui-root-font-size: 15px;
+}
+:root[data-ui-font-size="default"] {
+  --ui-root-font-size: 16px;
+}
+:root[data-ui-font-size="large"] {
+  --ui-root-font-size: 18px;
+}
+
+:root[data-ui-font-weight="light"] {
+  --ui-fw-normal: 300;
+}
+:root[data-ui-font-weight="regular"] {
+  --ui-fw-normal: 400;
+}
+:root[data-ui-font-weight="medium"] {
+  --ui-fw-normal: 500;
+}
+:root[data-ui-font-weight="semibold"] {
+  --ui-fw-normal: 600;
+}
+:root[data-ui-font-weight="bold"] {
+  --ui-fw-normal: 700;
+}
+
+:root[data-density="compact"] {
+  --note-pad-y: 16px;
+  --note-pad-x: 28px;
+  --note-pad-left: 40px;
+}
+:root[data-density="default"] {
+  --note-pad-y: 28px;
+  --note-pad-x: 48px;
+  --note-pad-left: 64px;
+}
+:root[data-density="comfortable"] {
+  --note-pad-y: 40px;
+  --note-pad-x: 64px;
+  --note-pad-left: 80px;
+}
+
+:root[data-content-width="narrow"] {
+  --note-max-width: 40rem;
+}
+:root[data-content-width="comfortable"] {
+  --note-max-width: 64rem;
+}
+:root[data-content-width="full"] {
+  --note-max-width: none;
+}
+
+:root[data-radius="sharp"] {
+  --radius: 0.125rem;
+}
+:root[data-radius="rounded"] {
+  --radius: 0.75rem;
+}
+
+:root[data-reduce-motion="true"] *,
+:root[data-reduce-motion="true"] *::before,
+:root[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
