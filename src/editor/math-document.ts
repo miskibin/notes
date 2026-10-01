@@ -1,5 +1,5 @@
 import type { Node as ProseNode, NodeSpec } from "@milkdown/kit/prose/model";
-import { Plugin, TextSelection, type EditorState } from "@milkdown/kit/prose/state";
+import { AllSelection, Plugin, TextSelection, type EditorState } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/view";
 
 export function mathSource(value: string, display: boolean): string {
@@ -26,16 +26,19 @@ export function mathSpec(display: boolean): NodeSpec {
   return {
     group: display ? "block" : "inline",
     inline: !display,
+    atom: !display,
     content: "text*",
     marks: "",
     code: true,
     defining: true,
+    createGapCursor: display,
     parseDOM: [{ tag: `${tag}[data-type="${name}"]`, preserveWhitespace: "full", contentElement: ".math-source" }],
     toDOM: () => [tag, { "data-type": name }, [tag, { class: "math-source" }, 0]],
   };
 }
 
 function touches(state: EditorState, pos: number, node: ProseNode): boolean {
+  if (!(state.selection instanceof TextSelection || state.selection instanceof AllSelection)) return false;
   const { from, to } = state.selection;
   return from <= pos + node.nodeSize - 1 && to >= pos + 1;
 }
@@ -70,6 +73,8 @@ export function mathEditingPlugin(): Plugin {
           }
           if (touches(state, pos, node) || value == null || !value.trim()) {
             decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: "math-editing" }));
+          } else {
+            decorations.push(Decoration.node(pos, pos + node.nodeSize, { contenteditable: "false" }));
           }
           return false;
         });

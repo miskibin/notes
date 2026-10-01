@@ -9,6 +9,7 @@ A local Markdown notebook built with Tauri and React. Notes are `.md` files in y
 - Select text and press **Ctrl+E** to edit a fragment with an instruction.
 - Select an idea, right-click and choose **Visualize** (or **Ctrl+Alt+V**). The edit model writes a matplotlib chart using NumPy and SciPy. Review the chart, caption and Python source, then insert it after the selection. Ctrl+Z undoes insertion; illustrative data is labeled. Desktop charts are PNG files in the vault's `assets/` folder.
 - **Ctrl+Shift+M** switches between live preview and Markdown source; **Ctrl+K** searches notes.
+- Click the space before or after a formula or chart to write beside it. Click a chart to select it, then press Delete or Backspace; Ctrl+Z restores it. At the start/end of adjacent text, Backspace/Delete first selects the object. Click a formula to edit its LaTeX; use a chart's Source button to edit its data.
 
 Configure the Ollama address, autocomplete model and edit model in Settings → Notes. Formatting and Visualize use the edit model. Models must already be available on the configured server. Failed or incomplete responses leave the original unchanged.
 
@@ -42,6 +43,7 @@ node scripts/visualize-smoke.mjs
 node scripts/storage-smoke.mjs
 node scripts/context-menu-smoke.mjs
 node scripts/editor-smoke.mjs
+node scripts/rendered-navigation-smoke.mjs
 node scripts/redesign-smoke.mjs
 ```
 

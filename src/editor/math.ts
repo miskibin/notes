@@ -114,6 +114,7 @@ function createMathView(display: boolean) {
     const closing = opening.cloneNode(true) as HTMLSpanElement;
     const preview = document.createElement(display ? "div" : "span");
     preview.className = "math-preview";
+    preview.contentEditable = "false";
     preview.append(opening, rendered, closing);
     dom.append(preview, source);
 

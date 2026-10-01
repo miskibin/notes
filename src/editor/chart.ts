@@ -1,27 +1,81 @@
 import { commandsCtx, editorViewCtx } from "@milkdown/kit/core";
 import type { Ctx } from "@milkdown/kit/ctx";
-import { textblockTypeInputRule } from "@milkdown/kit/prose/inputrules";
+import { InputRule } from "@milkdown/kit/prose/inputrules";
+import { NodeSelection, Plugin } from "@milkdown/kit/prose/state";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import type { EditorView, NodeView, ViewMutationRecord } from "@milkdown/kit/prose/view";
 import { clearTextInCurrentBlockCommand, codeBlockSchema } from "@milkdown/kit/preset/commonmark";
-import { $inputRule, $view } from "@milkdown/kit/utils";
+import { $inputRule, $nodeSchema, $prose, $view } from "@milkdown/kit/utils";
 import type { View } from "vega";
 import { chartLanguage, compileChartSource, paramNames, writeParamValues } from "./chart-dsl";
 
-const vegaLiteInput = $inputRule((ctx) =>
-  textblockTypeInputRule(/^```(?<language>[a-z][a-z0-9]*(?:-[a-z0-9]+)+)[\s\n]$/, codeBlockSchema.type(ctx), (match) => ({
-    language: match.groups?.language ?? "",
-  })),
+const chartFenceInput = $inputRule((ctx) =>
+  new InputRule(/^```(?<language>chart|vega|[a-z][a-z0-9]*(?:-[a-z0-9]+)+)[\s\n]$/, (state, match, start, end) => {
+    const $start = state.doc.resolve(start);
+    if ($start.parent.type.name !== "paragraph") return null;
+    const language = match.groups?.language ?? "chart";
+    if (!chartLanguage(language)) {
+      return state.tr.delete(start, end).setBlockType(start, start, codeBlockSchema.type(ctx), { language });
+    }
+    const pos = $start.before();
+    const node = chartSchema.type(ctx).create({ language });
+    const tr = state.tr.replaceWith(pos, $start.after(), node);
+    return tr.setSelection(NodeSelection.create(tr.doc, pos));
+  }),
 );
 
-const chartNodeView = $view(codeBlockSchema.node, () => {
-  return (node, view, getPos) => {
-    if (chartLanguage(String(node.attrs.language ?? ""))) return new ChartView(node, view, getPos);
-    return plainCodeView(node);
+// Charts retain their Markdown source, but navigation treats the preview as
+// one selectable object rather than an invisible, editable code block.
+const chartSchema = $nodeSchema("chart_block", (ctx) => {
+  const code = ctx.get(codeBlockSchema.key)(ctx);
+  return {
+    ...code,
+    atom: true,
+    selectable: true,
+    parseMarkdown: {
+      ...code.parseMarkdown,
+      match: (node) => node.type === "code" && !!chartLanguage(String(node.lang ?? "")),
+    },
+    toMarkdown: { ...code.toMarkdown, match: (node) => node.type.name === "chart_block" },
   };
 });
 
-export const chartPlugins = [vegaLiteInput, chartNodeView];
+export function configureChartSchema(ctx: Ctx) {
+  ctx.update(codeBlockSchema.key, (previous) => (inner) => {
+    const code = previous(inner);
+    return {
+      ...code,
+      parseMarkdown: {
+        ...code.parseMarkdown,
+        match: (node) => node.type === "code" && !chartLanguage(String(node.lang ?? "")),
+      },
+    };
+  });
+}
+
+const renderedChartView = $view(chartSchema.node, () => (node, view, getPos) => new ChartView(node, view, getPos));
+// The common Markdown input rule and pasted HTML can still create a code
+// block with a chart language. Normalize those paths to the same atom schema.
+const normalizeCharts = $prose((ctx) => new Plugin({
+  appendTransaction(transactions, _previous, state) {
+    if (!transactions.some(tr => tr.docChanged)) return null;
+    const tr = state.tr;
+    state.doc.descendants((node, pos) => {
+      if (node.type.name !== "code_block" || !chartLanguage(String(node.attrs.language ?? ""))) return;
+      tr.setNodeMarkup(pos, chartSchema.type(ctx), node.attrs);
+      if (state.selection.from > pos && state.selection.to < pos + node.nodeSize) {
+        tr.setSelection(NodeSelection.create(tr.doc, pos));
+      }
+      return false;
+    });
+    return tr.docChanged ? tr : null;
+  },
+}));
+const chartNodeView = $view(codeBlockSchema.node, () => {
+  return (node) => plainCodeView(node);
+});
+
+export const chartPlugins = [chartSchema, chartFenceInput, renderedChartView, chartNodeView, normalizeCharts];
 
 export function insertChartBlock(ctx: Ctx, language: string, source: string) {
   const commands = ctx.get(commandsCtx);
@@ -30,9 +84,12 @@ export function insertChartBlock(ctx: Ctx, language: string, source: string) {
   const state = view.state;
   const $from = state.selection.$from;
   if ($from.depth < 1) return;
-  const type = codeBlockSchema.type(ctx);
+  const type = chartSchema.type(ctx);
   const node = type.create({ language }, state.schema.text(source));
-  view.dispatch(state.tr.replaceWith($from.before(1), $from.after(1), node).scrollIntoView());
+  const pos = $from.before(1);
+  const tr = state.tr.replaceWith(pos, $from.after(1), node);
+  view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)).scrollIntoView());
+  view.focus();
 }
 
 class ChartView implements NodeView {
@@ -115,7 +172,13 @@ class ChartView implements NodeView {
     reset.addEventListener("click", () => void this.render(this.textarea.value));
     this.saveButton.addEventListener("click", () => this.saveDefaults());
 
-    if (!node.textContent.trim()) this.details.open = true;
+    if (!node.textContent.trim()) {
+      this.details.open = true;
+      queueMicrotask(() => {
+        if (view.editable && !view.isDestroyed && this.dom.isConnected && view.hasFocus() &&
+          view.state.selection.from === getPos()) this.textarea.focus();
+      });
+    }
     void this.render(node.textContent);
   }
 

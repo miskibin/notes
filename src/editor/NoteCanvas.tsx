@@ -16,7 +16,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef } from "react";
 import { displayUrl, isTauri, saveImage } from "../vault-api";
 import { autocomplete, type CompleteBridge } from "./autocomplete";
-import { chartPlugins, insertChartBlock } from "./chart";
+import { chartPlugins, configureChartSchema, insertChartBlock } from "./chart";
 import { CHART_ICON, CHART_TEMPLATES } from "./chart-templates";
 import { attachHandleDelay } from "./handle-delay";
 import { inlineEdit } from "./inline-edit";
@@ -25,6 +25,7 @@ import { markdownPaste } from "./paste";
 import { editorShortcuts } from "./shortcuts";
 import { imageDefaults } from "./images";
 import type { EditorHandle, EditorHandleRef } from "./editor-handle";
+import { renderedNodeNavigation } from "./rendered-nodes";
 
 export function NoteCanvas({
   noteKey,
@@ -88,6 +89,7 @@ export function NoteCanvas({
       });
     crepe.editor
       .config((ctx) => {
+        configureChartSchema(ctx);
         ctx.update(editorViewOptionsCtx, (prev) => ({
           ...prev,
           attributes: { spellcheck: "false", "aria-label": "Note editor" },
@@ -97,7 +99,7 @@ export function NoteCanvas({
       .use(flatPlugins(chartPlugins))
       .use(imageDefaults)
       .use(markdownPaste);
-    if (!readOnly) crepe.editor.use(autocomplete(bridgeRef.current)).use(inlineEdit(bridgeRef.current)).use(editorShortcuts());
+    if (!readOnly) crepe.editor.use(renderedNodeNavigation).use(autocomplete(bridgeRef.current)).use(inlineEdit(bridgeRef.current)).use(editorShortcuts());
     let ready = false;
     let initialDoc: ProseNode | null = null;
     crepe.on((listener) => {

@@ -484,6 +484,14 @@ body,
 .note-canvas .math-block.math-invalid > .math-source { display: block; }
 .note-canvas .math-invalid > .math-preview { display: none; }
 
+.note-canvas .rendered-cursor-edge { cursor: text; user-select: none; }
+.note-canvas .block-cursor-edge { height: 10px; }
+.note-canvas .inline-cursor-edge { display: inline-block; width: 0.25em; height: 1em; vertical-align: text-bottom; }
+.note-canvas :is(.math-block, .math-inline, .chart-block).ProseMirror-selectednode {
+  outline: 2px solid var(--ring, var(--foreground));
+  outline-offset: 2px;
+}
+
 .app-header-mode {
   display: inline-flex;
   flex: none;
