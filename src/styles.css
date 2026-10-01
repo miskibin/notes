@@ -853,3 +853,61 @@ body,
   .format-heading-icon { display: none; }
   .format-body .note-canvas .milkdown .ProseMirror { padding: 24px; }
 }
+
+/* References remain part of the document flow: quiet, local and never sticky. */
+.reference-area,
+.reference-actions {
+  max-width: var(--note-max-width, none);
+  margin: 0 auto;
+  padding: calc(var(--toolbar-height) + 18px) calc(var(--note-pad-x, 48px) * var(--ui-zoom, 1)) 0;
+  font-family: var(--font-sans-stack, "Segoe UI", sans-serif);
+}
+.reference-area + .note-canvas { padding-top: 0; }
+.reference-area + .note-canvas .ProseMirror { padding-top: 18px; }
+.reference-row { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.reference-chip, .reference-more, .reference-add, .reference-actions button {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0; height: 25px; padding: 0 8px;
+  border: 1px solid color-mix(in oklch, var(--border) 58%, transparent); border-radius: 999px;
+  background: transparent; color: var(--muted-foreground); font: 400 11px var(--font-sans-stack, "Segoe UI", sans-serif); cursor: pointer;
+}
+.reference-chip { max-width: 170px; }
+.reference-chip span { overflow: hidden; text-overflow: ellipsis; }
+.reference-chip svg, .reference-actions svg { width: 12px; height: 12px; flex: none; }
+.reference-chip:hover, .reference-more:hover, .reference-add:hover, .reference-actions button:hover { color: var(--foreground); background: var(--muted); }
+.reference-add { width: 25px; justify-content: center; padding: 0; font-size: 15px; }
+.backlinks { position: relative; color: var(--muted-foreground); font-size: 11px; }
+.backlinks summary { cursor: pointer; list-style: none; }
+.backlinks > div { position: absolute; z-index: 25; top: 24px; right: 0; width: 190px; padding: 4px; border: 1px solid var(--border); border-radius: 7px; background: var(--popover); box-shadow: 0 8px 24px #0004; }
+.backlinks button { display: block; width: 100%; border: 0; border-radius: 4px; padding: 7px; background: transparent; color: var(--foreground); text-align: left; cursor: pointer; }
+.backlinks button:hover { background: var(--muted); }
+.reference-actions { height: 0; position: relative; z-index: 5; padding-top: calc(var(--toolbar-height) + 14px); }
+.reference-actions button { opacity: .68; }
+
+.workspace-dialog { position: fixed; inset: 14vh auto auto 50%; transform: translateX(-50%); z-index: 100; width: min(560px, calc(100vw - 28px)); max-height: 70vh; margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--popover); color: var(--foreground); box-shadow: 0 18px 60px #0008; font-family: var(--font-sans-stack, "Segoe UI", sans-serif); }
+.workspace-dialog::backdrop { background: #0006; }
+.workspace-dialog header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.workspace-dialog header button { border: 0; background: transparent; color: var(--muted-foreground); cursor: pointer; }
+.workspace-dialog header svg { width: 16px; }
+.reference-dialog form > label { display: grid; gap: 6px; margin: 15px 16px; font-size: 12px; }
+.reference-dialog label span, .reference-dialog form > p, .history-intro { color: var(--muted-foreground); font-weight: 400; }
+.reference-dialog input { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--foreground); font: inherit; outline: 0; }
+.reference-dialog input:focus { border-color: var(--ring); }
+.reference-dialog form > p { margin: 0 16px; font-size: 11px; }
+.reference-dialog footer { display: flex; justify-content: flex-end; gap: 8px; padding: 16px; }
+.reference-dialog footer button, .history-list button { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--foreground); cursor: pointer; }
+.reference-dialog footer button[type=submit] { background: var(--foreground); color: var(--background); }
+.search-dialog { padding: 8px; }
+.search-box { display: flex; align-items: center; gap: 8px; padding: 3px 8px 9px; border-bottom: 1px solid var(--border); }
+.search-box svg { width: 17px; color: var(--muted-foreground); }
+.search-box input { flex: 1; border: 0; padding: 9px 0; outline: 0; background: transparent; color: var(--foreground); font: inherit; }
+.dialog-section-label { margin: 10px 9px 5px; color: var(--muted-foreground); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.search-results { max-height: 52vh; overflow: auto; }
+.search-results button { display: grid; gap: 4px; width: 100%; padding: 9px; border: 0; border-radius: 6px; background: transparent; color: var(--foreground); text-align: left; cursor: pointer; }
+.search-results button[data-selected=true] { background: var(--muted); }
+.search-results span, .search-results > p { overflow: hidden; color: var(--muted-foreground); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.history-intro { margin: 12px 16px; font-size: 12px; }
+.history-list { max-height: 52vh; overflow: auto; padding: 0 8px 10px; }
+.history-list > div { display: flex; align-items: center; gap: 10px; padding: 9px; border-bottom: 1px solid color-mix(in oklch, var(--border) 55%, transparent); }
+.history-list > div > svg { width: 16px; color: var(--muted-foreground); }
+.history-list > div > span { display: grid; flex: 1; gap: 3px; }
+.history-list small { color: var(--muted-foreground); }

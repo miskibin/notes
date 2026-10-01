@@ -55,6 +55,7 @@ export function Sidebar({
   onMeta,
   screen,
   onSettings,
+  onSearch,
 }: {
   notes: NoteFile[];
   active: string | null;
@@ -71,6 +72,7 @@ export function Sidebar({
   onMeta: (meta: SidebarMeta) => void;
   screen: "notes" | "settings";
   onSettings: () => void;
+  onSearch: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
   const [searching, setSearching] = useState(false);
@@ -93,23 +95,8 @@ export function Sidebar({
   }, [notes, meta.pinned]);
 
   const openSearch = () => {
-    setCollapsed(false);
-    setSearching(true);
-    searchRef.current?.focus();
+    onSearch();
   };
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey || event.defaultPrevented ||
-          document.querySelector("dialog[open]") || event.key.toLowerCase() !== "k" || event.isComposing) return;
-      event.preventDefault();
-      setCollapsed(false);
-      setSearching(true);
-      searchRef.current?.focus();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   const addProject = () => {
     const id = crypto.randomUUID();

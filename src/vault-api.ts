@@ -13,6 +13,10 @@ export type CompletionResult = {
 const memoryNotes = new Map<string, string>();
 const memoryModified = new Map<string, number>();
 const assetCache = new Map<string, string>();
+const memoryHistory: HistoryEntry[] = [];
+const memoryHistoryBodies = new Map<string, string>();
+
+export type HistoryEntry = { id: string; note: string; modified_ms: number; deleted: boolean };
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
@@ -67,6 +71,8 @@ export async function readNote(vault: string, name: string): Promise<string> {
 
 export async function writeNote(vault: string, name: string, body: string): Promise<void> {
   if (!isTauri()) {
+    const previous = memoryNotes.get(name);
+    if (previous != null && previous !== body) archiveMemory(name, previous, false);
     memoryNotes.set(name, body);
     memoryModified.set(name, Date.now());
     return;
@@ -76,11 +82,35 @@ export async function writeNote(vault: string, name: string, body: string): Prom
 
 export async function deleteNote(vault: string, name: string): Promise<void> {
   if (!isTauri()) {
+    const previous = memoryNotes.get(name);
+    if (previous != null) archiveMemory(name, previous, true);
     memoryNotes.delete(name);
     memoryModified.delete(name);
     return;
   }
   await invoke("delete_note", { vault, name });
+}
+
+export async function listHistory(vault: string): Promise<HistoryEntry[]> {
+  if (!isTauri()) return [...memoryHistory].sort((a, b) => b.modified_ms - a.modified_ms);
+  return invoke<HistoryEntry[]>("list_history", { vault });
+}
+
+export async function readHistory(vault: string, id: string): Promise<string> {
+  if (!isTauri()) {
+    const body = memoryHistoryBodies.get(id);
+    if (body == null) throw new Error("History entry not found");
+    return body;
+  }
+  return invoke<string>("read_history", { vault, id });
+}
+
+function archiveMemory(note: string, body: string, deleted: boolean): void {
+  const modified_ms = Date.now();
+  const id = `${modified_ms}-${deleted ? "deleted" : "version"}-${note}-${crypto.randomUUID()}`;
+  memoryHistory.unshift({ id, note, modified_ms, deleted });
+  memoryHistoryBodies.set(id, body);
+  while (memoryHistory.length > 200) memoryHistoryBodies.delete(memoryHistory.pop()!.id);
 }
 
 export async function ensureWelcome(vault: string): Promise<void> {

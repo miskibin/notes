@@ -13,6 +13,9 @@ import { chartMarkdown, validateIdea, type ChartRecipe } from "./visualize/recip
 import type { ChartImage } from "./visualize/python";
 import type { CompleteBridge, CompletionStatus } from "./editor/autocomplete";
 import { countLines, newNoteName, retitle, titleFrom, type NoteFile } from "./notes";
+import { classifyReference, ensureNoteMetadata, noteBody, readNoteMetadata, referenceLabel, wikiLinks, withNoteMetadata, type NoteReference } from "./note-metadata";
+import type { SearchDocument } from "./note-search";
+import { HistoryDialog, ReferenceBar, ReferenceDialog, SearchDialog } from "./WorkspaceOverlays";
 import { readSettings, writeSettings, type Settings } from "./settings";
 import { SettingsPage } from "./SettingsPage";
 import { Sidebar } from "./Sidebar";
@@ -38,6 +41,9 @@ import {
   readNote,
   writeNote,
   saveImage,
+  listHistory,
+  readHistory,
+  type HistoryEntry,
 } from "./vault-api";
 
 type Screen = "notes" | "settings";
@@ -67,7 +73,14 @@ export default function App() {
   const transitionBusy = useRef(false);
   const [transitioning, setTransitioning] = useState(false);
   const [visualSession, setVisualSession] = useState<VisualSession | null>(null);
+  const [referenceDialog, setReferenceDialog] = useState<NoteReference | "new" | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchDocuments, setSearchDocuments] = useState<SearchDocument[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [recent, setRecent] = useState<string[]>([]);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[] | null>(null);
   const visualRef = useRef<VisualSession | null>(null);
+  const revealRef = useRef("");
 
   const settingsRef = useRef(settings);
   const activeRef = useRef(active);
@@ -155,7 +168,11 @@ export default function App() {
       : listed.some((note) => note.name === activeRef.current)
         ? activeRef.current
         : (listed[0]?.name ?? null);
-    const body = name ? await readNote(vault, name) : "";
+    let body = name ? await readNote(vault, name) : "";
+    if (name) {
+      const ensured = ensureNoteMetadata(body);
+      if (ensured !== body) { body = ensured; await writeNote(vault, name, body); }
+    }
     if (ticket !== refreshId.current) return;
     const pruned = pruneMeta(readMeta(vault), listed.map((note) => note.name));
     writeMeta(vault, pruned);
@@ -165,6 +182,7 @@ export default function App() {
     savedRef.current = body;
     setMarkdown(body);
     setActive(name ?? null);
+    if (name) setRecent((items) => [name, ...items.filter((item) => item !== name)].slice(0, 12));
     setSaveState("saved");
   }, []);
 
@@ -172,7 +190,7 @@ export default function App() {
     window.clearTimeout(saveTimer.current);
     const name = activeRef.current;
     const vault = settingsRef.current.vault;
-    const body = editorHandle.current?.getMarkdown() ?? draftRef.current;
+    const body = draftRef.current;
     draftRef.current = body;
     setMarkdown(body);
     if (!name || !vault) return;
@@ -244,6 +262,15 @@ export default function App() {
 
   const onChange = useCallback(
     (next: string) => {
+      const currentMetadata = readNoteMetadata(next);
+      const linked = wikiLinks(next);
+      const additions = linked.flatMap((label) => {
+        if (currentMetadata.references.some((reference) => reference.kind === "note" && reference.label.toLocaleLowerCase() === label.toLocaleLowerCase())) return [];
+        const target = searchDocuments.find((document) => document.title.toLocaleLowerCase() === label.toLocaleLowerCase());
+        const noteId = target ? readNoteMetadata(target.markdown).id : "";
+        return noteId ? [{ id: crypto.randomUUID(), kind: "note" as const, noteId, label }] : [];
+      });
+      if (additions.length) next = withNoteMetadata(next, { ...currentMetadata, references: [...currentMetadata.references, ...additions] });
       draftRef.current = next;
       setMarkdown(next);
       const nameNow = activeRef.current;
@@ -280,7 +307,7 @@ export default function App() {
           });
       }, 400);
     },
-    [],
+    [searchDocuments],
   );
 
   const openNote = async (name: string) => {
@@ -291,13 +318,16 @@ export default function App() {
     }
     await transition(async () => {
       await flush();
-      const body = await readNote(settingsRef.current.vault, name);
+      let body = await readNote(settingsRef.current.vault, name);
+      const ensured = ensureNoteMetadata(body);
+      if (body !== ensured) { body = ensured; await writeNote(settingsRef.current.vault, name, body); }
       draftRef.current = body;
       savedRef.current = body;
       setMarkdown(body);
       setActive(name);
       setScreen("notes");
       setSaveState("saved");
+      setRecent((items) => [name, ...items.filter((item) => item !== name)].slice(0, 12));
     });
   };
 
@@ -388,18 +418,22 @@ export default function App() {
   };
 
   const headerTitle = active ? titleFrom(markdown, active) : "";
+  const noteMetadata = readNoteMetadata(markdown);
+  const backlinks = notes.filter((note) => note.name !== active && searchDocuments.some((document) => document.name === note.name && (
+    readNoteMetadata(document.markdown).references.some((reference) => reference.noteId === noteMetadata.id) || wikiLinks(document.markdown).some((label) => label.toLocaleLowerCase() === headerTitle.toLocaleLowerCase())
+  )));
   const words = markdown.match(/[\p{L}\p{N}]+(?:['’_-][\p{L}\p{N}]+)*/gu)?.length ?? 0;
   const openFormat = async () => {
     if (openingFormat.current || formatSession || visualRef.current || transitionBusy.current) return;
     openingFormat.current = true;
     try {
-      const original = editorHandle.current?.getMarkdown() ?? draftRef.current;
+      const original = draftRef.current;
       const snapshot = { note: activeRef.current ?? "", vault: settingsRef.current.vault, original };
       validateFormatInput(original);
       await flush();
       if (!snapshot.note || !canApplyFormat(snapshot, {
         note: activeRef.current ?? "", vault: settingsRef.current.vault,
-        original: editorHandle.current?.getMarkdown() ?? draftRef.current,
+        original: draftRef.current,
       })) return;
       setLoadError(null);
       setFormatSession(snapshot);
@@ -412,10 +446,11 @@ export default function App() {
   const applyFormat = (formatted: string): string | null => {
     const handle = editorHandle.current;
     if (!handle || !formatSession || !canApplyFormat(formatSession, {
-      note: activeRef.current ?? "", vault: settingsRef.current.vault, original: handle.getMarkdown(),
+      note: activeRef.current ?? "", vault: settingsRef.current.vault, original: draftRef.current,
     })) return "The note changed while formatting. Discard this preview and format the current version.";
     try {
-      handle.replaceMarkdown(formatted);
+      const merged = withNoteMetadata(noteBody(formatted), readNoteMetadata(draftRef.current));
+      if (sourceMode) handle.replaceMarkdown(merged); else handle.replaceMarkdown(noteBody(merged));
       setFormatSession(null);
       setLoadError(null);
       return null;
@@ -425,9 +460,9 @@ export default function App() {
   };
   const toggleSource = useCallback(() => {
     const latest = editorHandle.current?.getMarkdown();
-    if (latest != null && latest !== draftRef.current) onChange(latest);
+    if (latest != null && !sourceMode && latest !== noteBody(draftRef.current)) onChange(withNoteMetadata(latest, readNoteMetadata(draftRef.current)));
     setSourceMode((current) => !current);
-  }, [onChange]);
+  }, [onChange, sourceMode]);
   const openVisualize = (selection: EditorSelection) => {
     const editor = editorHandle.current;
     if (!editor || !activeRef.current || formatSession || visualRef.current) return;
@@ -466,6 +501,47 @@ export default function App() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [screen, toggleSource]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.isComposing || document.querySelector("dialog[open]")) return;
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen(true); }
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "l" && activeRef.current) { event.preventDefault(); setReferenceDialog("new"); }
+    };
+    window.addEventListener("keydown", onKey, true); return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
+  useEffect(() => {
+    if (!searchOpen && !active) return;
+    let cancelled = false; setSearchLoading(true);
+    void Promise.all(notes.map(async (note) => ({ ...note, markdown: note.name === activeRef.current ? draftRef.current : await readNote(settingsRef.current.vault, note.name) })))
+      .then((documents) => { if (!cancelled) setSearchDocuments(documents); })
+      .catch((error: unknown) => { if (!cancelled) setLoadError(errorText(error)); })
+      .finally(() => { if (!cancelled) setSearchLoading(false); });
+    return () => { cancelled = true; };
+  }, [searchOpen, active, notes.length]);
+
+  const saveReference = (input: string, label: string) => {
+    const current = readNoteMetadata(draftRef.current);
+    const kind = classifyReference(input);
+    const next: NoteReference = { id: referenceDialog !== "new" && referenceDialog ? referenceDialog.id : crypto.randomUUID(), kind, url: input, label: label || referenceLabel(input, kind) };
+    const references = referenceDialog !== "new" && referenceDialog ? current.references.map((item) => item.id === referenceDialog.id ? next : item) : [...current.references, next];
+    const body = withNoteMetadata(draftRef.current, { ...current, references });
+    setReferenceDialog(null); draftRef.current = body; setMarkdown(body); setEpoch((value) => value + 1); onChange(body);
+  };
+
+  const openReference = (reference: NoteReference) => {
+    if (reference.kind === "note" && reference.noteId) {
+      const target = searchDocuments.find((item) => readNoteMetadata(item.markdown).id === reference.noteId);
+      if (target) void openNote(target.name);
+    } else if (reference.url) window.open(reference.url, "_blank", "noopener");
+  };
+
+  const openHistory = () => void flush().then(() => listHistory(settingsRef.current.vault)).then(setHistoryEntries).catch((error: unknown) => setLoadError(errorText(error)));
+  const restoreHistory = (entry: HistoryEntry) => void transition(async () => {
+    await flush(); const body = await readHistory(settingsRef.current.vault, entry.id); await writeNote(settingsRef.current.vault, entry.note, body);
+    setHistoryEntries(null); await refreshNotes(settingsRef.current.vault, entry.note);
+  });
   const navigate = async (next: Screen) => {
     if (next === screen) return;
     await transition(async () => {
@@ -502,6 +578,13 @@ export default function App() {
     };
   }, [active, epoch, screen, sourceMode]);
 
+  useEffect(() => {
+    if (!revealRef.current) return;
+    const text = revealRef.current; revealRef.current = "";
+    const frame = window.requestAnimationFrame(() => editorHandle.current?.revealText(text));
+    return () => window.cancelAnimationFrame(frame);
+  }, [active, epoch, sourceMode]);
+
   return (
     <div className="app">
       <div className="app-body" inert={transitioning} aria-busy={transitioning}>
@@ -521,9 +604,11 @@ export default function App() {
         onMeta={commitMeta}
         screen={screen}
         onSettings={() => void navigate("settings")}
+        onSearch={() => setSearchOpen(true)}
       />
       <main id="note-content" className="note-column" ref={columnRef}>
-        <AppHeader title={headerTitle} screen={screen} sourceMode={sourceMode} onToggleSource={toggleSource} onNavigate={(next) => void navigate(next)} />
+        <AppHeader title={headerTitle} screen={screen} sourceMode={sourceMode} onToggleSource={toggleSource} onNavigate={(next) => void navigate(next)}
+          onReference={() => setReferenceDialog("new")} onHistory={openHistory} />
         <div className={`note-scroll${screen === "settings" ? " note-scroll-settings" : ""}`} ref={scrollRef}>
         {!ready ? <p className="empty">Opening notes…</p> : null}
         {loadError ? <div className="error-line" role="alert"><span>{loadError}</span><button type="button" onClick={() => setLoadError(null)}>Dismiss</button></div> : null}
@@ -549,6 +634,9 @@ export default function App() {
           />
         ) : null}
         {ready && screen === "notes" && active ? (
+          <>
+          {!sourceMode ? <ReferenceBar metadata={noteMetadata} backlinks={backlinks} onAdd={() => setReferenceDialog("new")} onEdit={setReferenceDialog}
+            onOpen={openReference} onOpenNote={(name) => void openNote(name)} /> : null}
           <EditorContextMenu editorHandle={editorHandle} onVisualize={openVisualize}>{sourceMode ? <SourceCanvas
             noteKey={`${settings.vault}:${active}:${epoch}`}
             markdown={markdown}
@@ -556,12 +644,12 @@ export default function App() {
             editorHandle={editorHandle}
           /> : <NoteCanvas
             noteKey={`${settings.vault}:${active}:${epoch}`}
-            markdown={markdown}
+            markdown={noteBody(markdown)}
             vault={settings.vault}
             bridge={bridge}
-            onChange={onChange}
+            onChange={(body) => onChange(withNoteMetadata(body, readNoteMetadata(draftRef.current)))}
             editorHandle={editorHandle}
-          />}</EditorContextMenu>
+          />}</EditorContextMenu></>
         ) : null}
         {ready && screen === "notes" && !active && !loadError ? <p className="empty">No notes yet.</p> : null}
         </div>
@@ -576,6 +664,10 @@ export default function App() {
         onSettings={() => { setFormatSession(null); void navigate("settings"); }} /> : null}
       {visualSession ? <Suspense fallback={null}><VisualizeDialog idea={visualSession.selection.text} host={settings.ollamaHost} model={settings.editModel}
         onClose={closeVisualize} onInsert={insertChart} onSettings={() => { closeVisualize(); void navigate("settings"); }} /></Suspense> : null}
+      {referenceDialog ? <ReferenceDialog initial={referenceDialog === "new" ? undefined : referenceDialog} onClose={() => setReferenceDialog(null)} onSave={saveReference} /> : null}
+      {searchOpen ? <SearchDialog documents={searchDocuments} recent={recent} loading={searchLoading} onClose={() => setSearchOpen(false)}
+        onOpen={(name, offset, query) => { if (offset >= 0) revealRef.current = query; setSearchOpen(false); void openNote(name).then(() => { if (revealRef.current) { const text = revealRef.current; revealRef.current = ""; window.setTimeout(() => editorHandle.current?.revealText(text), 0); } }); }} /> : null}
+      {historyEntries ? <HistoryDialog entries={historyEntries} onClose={() => setHistoryEntries(null)} onRestore={restoreHistory} /> : null}
     </div>
   );
 }

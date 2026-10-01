@@ -180,6 +180,12 @@ export function NoteCanvas({
         view.focus();
       }),
       focus: () => crepe.editor.action((ctx) => ctx.get(editorViewCtx).focus()),
+      revealText: (text) => crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx); const needle = text.toLocaleLowerCase(); let found: { from: number; to: number } | null = null;
+        view.state.doc.descendants((node, pos) => { const at = node.isText ? (node.text ?? "").toLocaleLowerCase().indexOf(needle) : -1; if (at >= 0 && !found) found = { from: pos + at, to: pos + at + text.length }; });
+        if (!found) return; const range = found as { from: number; to: number };
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, range.from, range.to)).scrollIntoView()); view.focus();
+      }),
     };
     return () => {
       cancelled = true;
