@@ -12,6 +12,8 @@ pub fn run() {
             vault::read_note,
             vault::write_note,
             vault::delete_note,
+            vault::list_history,
+            vault::read_history,
             vault::save_image,
             vault::read_asset,
             ollama::list_models,

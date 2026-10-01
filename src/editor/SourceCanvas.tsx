@@ -64,6 +64,12 @@ export function SourceCanvas({ noteKey, markdown, onChange, editorHandle }: {
         view.focus();
       },
       focus: () => view.focus(),
+      revealText: (text) => {
+        const at = view.state.doc.toString().toLocaleLowerCase().indexOf(text.toLocaleLowerCase());
+        if (at < 0) return;
+        view.dispatch({ selection: { anchor: at, head: at + text.length }, effects: EditorView.scrollIntoView(at, { y: "center" }) });
+        view.focus();
+      },
     };
     editorHandle.current = handle;
     view.focus();

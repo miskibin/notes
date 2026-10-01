@@ -1,9 +1,18 @@
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
+
+#[derive(Debug, Serialize)]
+pub struct HistoryEntry {
+    pub id: String,
+    pub note: String,
+    pub modified_ms: u64,
+    pub deleted: bool,
+}
 
 #[derive(Debug, Serialize)]
 pub struct NoteFile {
@@ -69,7 +78,7 @@ fn open_vault(vault: &str) -> Result<PathBuf, String> {
 }
 
 fn markdown_title(head: &str, filename: &str) -> String {
-    for line in head.lines() {
+    for line in markdown_body(head).lines() {
         let line = line.trim();
         let hashes = line.chars().take_while(|ch| *ch == '#').count();
         if (1..=6).contains(&hashes) && line.as_bytes().get(hashes) == Some(&b' ') {
@@ -83,11 +92,29 @@ fn markdown_title(head: &str, filename: &str) -> String {
 }
 
 fn markdown_line_count(body: &str) -> usize {
+    let body = markdown_body(body);
     if body.is_empty() {
         return 0;
     }
     let normalized = body.replace("\r\n", "\n").replace('\r', "\n");
     normalized.split('\n').count() - usize::from(normalized.ends_with('\n'))
+}
+
+fn markdown_body(body: &str) -> &str {
+    let Some(first) = body.find('\n') else {
+        return body;
+    };
+    if body[..first].trim_end() != "---" {
+        return body;
+    }
+    let mut offset = first + 1;
+    for line in body[offset..].split_inclusive('\n') {
+        offset += line.len();
+        if line.trim_end() == "---" {
+            return &body[offset..];
+        }
+    }
+    body
 }
 
 #[tauri::command]
@@ -156,6 +183,12 @@ pub fn write_note(vault: String, name: String, body: String) -> Result<(), Strin
     let vault = open_vault(&vault)?;
     let name = note_file_name(&name)?;
     let path = vault.join(&name);
+    if path.is_file() {
+        let previous = fs::read_to_string(&path).map_err(|err| err.to_string())?;
+        if previous != body {
+            archive_version(&vault, &name, &previous, false)?;
+        }
+    }
     let tmp = vault.join(format!(".{name}.writing"));
     fs::write(&tmp, body).map_err(|err| err.to_string())?;
     if fs::rename(&tmp, &path).is_ok() {
@@ -170,11 +203,120 @@ pub fn write_note(vault: String, name: String, body: String) -> Result<(), Strin
 pub fn delete_note(vault: String, name: String) -> Result<(), String> {
     let vault = open_vault(&vault)?;
     let name = note_file_name(&name)?;
-    let path = vault.join(name);
+    let path = vault.join(&name);
     if path.is_file() {
+        let body = fs::read_to_string(&path).map_err(|err| err.to_string())?;
+        archive_version(&vault, &name, &body, true)?;
         fs::remove_file(path).map_err(|err| err.to_string())?;
     }
     Ok(())
+}
+
+fn archive_version(
+    vault: &std::path::Path,
+    name: &str,
+    body: &str,
+    deleted: bool,
+) -> Result<(), String> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    archive_version_at(vault, name, body, deleted, stamp)
+}
+
+fn archive_version_at(
+    vault: &std::path::Path,
+    name: &str,
+    body: &str,
+    deleted: bool,
+    mut stamp: u128,
+) -> Result<(), String> {
+    let dir = vault.join(".notes-history");
+    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    let suffix = if deleted { "deleted" } else { "version" };
+    loop {
+        let path = dir.join(format!("{stamp}-{suffix}-{name}"));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                if let Err(error) = file
+                    .write_all(body.as_bytes())
+                    .and_then(|_| file.sync_all())
+                {
+                    drop(file);
+                    let _ = fs::remove_file(path);
+                    return Err(error.to_string());
+                }
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => stamp += 1,
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    let mut entries: Vec<_> = fs::read_dir(&dir)
+        .map_err(|err| err.to_string())?
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry.path().is_file() && history_entry(&entry.file_name().to_string_lossy()).is_some()
+        })
+        .collect();
+    entries.sort_by_key(|entry| entry.file_name());
+    while entries.len() > 200 {
+        let entry = entries.remove(0);
+        let _ = fs::remove_file(entry.path());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_history(vault: String) -> Result<Vec<HistoryEntry>, String> {
+    let vault = open_vault(&vault)?;
+    let dir = vault.join(".notes-history");
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut result = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|err| err.to_string())? {
+        let entry = entry.map_err(|err| err.to_string())?;
+        let id = entry.file_name().to_string_lossy().to_string();
+        if entry.path().is_file() {
+            if let Some(item) = history_entry(&id) {
+                result.push(item);
+            }
+        }
+    }
+    result.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn read_history(vault: String, id: String) -> Result<String, String> {
+    let vault = open_vault(&vault)?;
+    if history_entry(&id).is_none() {
+        return Err("Invalid history entry".into());
+    }
+    fs::read_to_string(vault.join(".notes-history").join(id)).map_err(|err| err.to_string())
+}
+
+fn history_entry(id: &str) -> Option<HistoryEntry> {
+    if invalid_file_name(id) {
+        return None;
+    }
+    let (stamp, rest) = id.split_once('-')?;
+    let (kind, note) = rest.split_once('-')?;
+    if !matches!(kind, "version" | "deleted") || note_file_name(note).is_err() {
+        return None;
+    }
+    Some(HistoryEntry {
+        id: id.into(),
+        note: note.into(),
+        modified_ms: stamp.parse().ok()?,
+        deleted: kind == "deleted",
+    })
 }
 
 #[tauri::command]
@@ -214,7 +356,101 @@ pub fn read_asset(vault: String, relative: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{asset_file_name, image_ext, markdown_line_count, markdown_title, note_file_name};
+    use super::{
+        archive_version_at, asset_file_name, delete_note, history_entry, image_ext, list_history,
+        markdown_line_count, markdown_title, note_file_name, read_history, read_note, write_note,
+    };
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    struct TempVault(PathBuf);
+    impl TempVault {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "notes-test-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+        fn name(&self) -> String {
+            self.0.to_string_lossy().into_owned()
+        }
+    }
+    impl Drop for TempVault {
+        fn drop(&mut self) {
+            assert!(self.0.starts_with(std::env::temp_dir()));
+            assert!(self
+                .0
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("notes-test-"));
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn history_preserves_writes_deletion_and_restoration() {
+        let vault = TempVault::new();
+        write_note(vault.name(), "a.md".into(), "first".into()).unwrap();
+        write_note(vault.name(), "a.md".into(), "second".into()).unwrap();
+        delete_note(vault.name(), "a.md".into()).unwrap();
+        let history = list_history(vault.name()).unwrap();
+        assert_eq!(history.len(), 2);
+        let deleted = history.iter().find(|entry| entry.deleted).unwrap();
+        let body = read_history(vault.name(), deleted.id.clone()).unwrap();
+        assert_eq!(body, "second");
+        write_note(vault.name(), "a.md".into(), body).unwrap();
+        assert_eq!(read_note(vault.name(), "a.md".into()).unwrap(), "second");
+        assert!(read_history(vault.name(), "../a.md".into()).is_err());
+    }
+
+    #[test]
+    fn snapshots_in_the_same_millisecond_never_overwrite_each_other() {
+        let vault = TempVault::new();
+        archive_version_at(&vault.0, "a.md", "first", false, 1000).unwrap();
+        archive_version_at(&vault.0, "a.md", "second", false, 1000).unwrap();
+        let history = list_history(vault.name()).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(
+            read_history(vault.name(), history[0].id.clone()).unwrap(),
+            "second"
+        );
+        assert_eq!(
+            read_history(vault.name(), history[1].id.clone()).unwrap(),
+            "first"
+        );
+    }
+
+    #[test]
+    fn history_retention_ignores_unrecognized_files() {
+        let vault = TempVault::new();
+        fs::create_dir(vault.0.join(".notes-history")).unwrap();
+        fs::write(vault.0.join(".notes-history/keep.txt"), "unrelated").unwrap();
+        for index in 0..201 {
+            archive_version_at(&vault.0, "a.md", &index.to_string(), false, 1000 + index).unwrap();
+        }
+        let history = list_history(vault.name()).unwrap();
+        assert_eq!(history.len(), 200);
+        assert_eq!(history.last().unwrap().modified_ms, 1001);
+        assert!(vault.0.join(".notes-history/keep.txt").is_file());
+        assert!(history_entry("1000-unknown-a.md").is_none());
+    }
+
+    #[test]
+    fn titles_and_line_counts_ignore_yaml_metadata() {
+        let body = "---\nother: |\n  # Metadata heading\nnotes:\n  id: stable\n---\nPlain body\n";
+        assert_eq!(markdown_title(body, "a.md"), "a");
+        assert_eq!(markdown_line_count(body), 1);
+    }
 
     #[test]
     fn line_count_handles_windows_and_trailing_newlines() {

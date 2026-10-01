@@ -55,7 +55,7 @@ try {
 
   const newNote = page.locator('[data-slot="chat-sidebar-panel"]').getByRole("button", { name: "New note", exact: true });
   await newNote.evaluate(el => { el.click(); el.click(); });
-  await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent === "");
+  await page.waitForFunction(() => window.storageTest.files.get("Vault A").get("untitled.md")?.replace(/^---\n[\s\S]*?\n---\n/, "") === "");
   assert.equal(await page.evaluate(() => window.storageTest.files.get("Vault A").size), 3);
   await row("Alpha").click();
   await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("Edited before changing"));
@@ -66,6 +66,9 @@ try {
   await page.evaluate(() => { window.storageTest.failRead = true; });
   await page.getByRole("button", { name: "Change", exact: true }).click();
   await page.getByText("Simulated read failure", { exact: true }).waitFor();
+  // Background indexing can report the same injected failure before the folder
+  // transition finishes. Keep the failure active until that transition settles.
+  await page.locator('.app-body[aria-busy="false"]').waitFor();
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("notes-settings")).vault), "Vault A");
   await page.evaluate(() => { window.storageTest.failRead = false; });
   await page.getByRole("button", { name: "Change", exact: true }).click();

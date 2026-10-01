@@ -7,5 +7,6 @@ export type EditorHandle = {
   selectAll: () => void;
   insertAfterSelection: (markdown: string, selection: EditorSelection) => void;
   focus: () => void;
+  revealText: (text: string) => void;
 };
 export type EditorHandleRef = { current: EditorHandle | null };

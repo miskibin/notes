@@ -1,4 +1,4 @@
-import { ArrowLeft, CodeXml, Minus, Square, X } from "lucide-react";
+import { ArrowLeft, CodeXml, History, Link2, Minus, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "./vault-api";
 
@@ -8,12 +8,16 @@ export function AppHeader({
   onNavigate,
   sourceMode,
   onToggleSource,
+  onReference,
+  onHistory,
 }: {
   title: string;
   screen: "notes" | "settings";
   onNavigate: (screen: "notes" | "settings") => void;
   sourceMode: boolean;
   onToggleSource: () => void;
+  onReference: () => void;
+  onHistory: () => void;
 }) {
   return (
     <header className="app-header" data-tauri-drag-region>
@@ -29,10 +33,14 @@ export function AppHeader({
       ) : <span className="app-header-page" data-tauri-drag-region>{screen === "settings" ? "Settings" : ""}</span>}
       <div className="app-header-spacer" data-tauri-drag-region />
       {screen === "notes" ? (
+        <>
+        <button type="button" className="app-header-mode" aria-label="Add reference" title="Add reference (Ctrl+Shift+L)" onClick={onReference}><Link2 aria-hidden /></button>
+        <button type="button" className="app-header-mode" aria-label="History and recovery" title="History and recovery" onClick={onHistory}><History aria-hidden /></button>
         <button type="button" className="app-header-mode" aria-label="Markdown source" aria-pressed={sourceMode}
           title={`${sourceMode ? "Live preview" : "Markdown source"} (Ctrl+Shift+M)`} onClick={onToggleSource}>
           <CodeXml aria-hidden />
         </button>
+        </>
       ) : null}
       {isTauri() ? <WindowControls /> : null}
     </header>

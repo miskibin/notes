@@ -22,8 +22,9 @@ await mkdir(dir, { recursive: true });
 
 async function createNote(markdown, pin = false) {
   await panel.getByRole("button", { name: "New note", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.trim() === "");
+  await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.startsWith("---"));
   await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
   await page.keyboard.insertText(markdown);
   await panel.locator('[role="status"]').waitFor({ state: "hidden" });
   if (pin) {
@@ -70,9 +71,11 @@ try {
   await page.waitForFunction(() => getComputedStyle(document.querySelector(".app-header-title")).opacity === "0");
 
   await page.keyboard.press("Control+k");
-  const search = page.getByRole("textbox", { name: "Search notes", exact: true });
+  const searchDialog = page.getByRole("dialog", { name: "Search notes", exact: true });
+  const search = searchDialog.getByRole("textbox");
   await search.fill("Spotkanie");
-  assert.equal(await panel.locator('[data-slot="sidebar-item-button"]').count(), 1);
+  await searchDialog.getByRole("button").filter({ hasText: "Spotkanie zespołu" }).waitFor();
+  assert.equal(await searchDialog.locator(".search-results > button").count(), 1);
   await search.press("Escape");
   await search.waitFor({ state: "hidden" });
   await panel.getByRole("button", { name: "Collapse sidebar", exact: true }).click();

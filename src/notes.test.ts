@@ -22,4 +22,11 @@ describe("notes", () => {
   it("avoids colliding untitled names", () => {
     expect(newNoteName(["untitled.md", "untitled-2.md"])).toBe("untitled-3.md");
   });
+
+  it("retitles the body while retaining the raw frontmatter", () => {
+    const metadata = "---\n# Comment\ntags: [physics]\nnotes:\n  id: stable\n---\n";
+    expect(retitle(`${metadata}Plain text`, "Heading")).toBe(`${metadata}# Heading\n\nPlain text`);
+    expect(titleFrom(`${metadata}# Heading`, "a.md")).toBe("Heading");
+    expect(countLines(`${metadata}Plain text\n`)).toBe(1);
+  });
 });

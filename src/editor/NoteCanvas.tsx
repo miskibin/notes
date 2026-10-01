@@ -3,7 +3,7 @@ import { editorViewCtx, editorViewOptionsCtx, parserCtx } from "@milkdown/kit/co
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import { getMarkdown, replaceAll } from "@milkdown/kit/utils";
 import { closeHistory } from "@milkdown/kit/prose/history";
-import { AllSelection, TextSelection } from "@milkdown/kit/prose/state";
+import { AllSelection, NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { CrepeBuilder } from "@milkdown/crepe/builder";
 import { blockEdit } from "@milkdown/crepe/feature/block-edit";
 import { cursor } from "@milkdown/crepe/feature/cursor";
@@ -26,6 +26,8 @@ import { editorShortcuts } from "./shortcuts";
 import { imageDefaults } from "./images";
 import type { EditorHandle, EditorHandleRef } from "./editor-handle";
 import { renderedNodeNavigation } from "./rendered-nodes";
+import { editorTextRange } from "./reveal-text";
+import { configureWikiSerialization, wikiPlugins } from "./wiki-links";
 
 export function NoteCanvas({
   noteKey,
@@ -35,6 +37,7 @@ export function NoteCanvas({
   onChange,
   editorHandle,
   readOnly = false,
+  onOpenWikiLink,
 }: {
   noteKey: string;
   markdown: string;
@@ -43,13 +46,16 @@ export function NoteCanvas({
   onChange: (markdown: string) => void;
   editorHandle: EditorHandleRef;
   readOnly?: boolean;
+  onOpenWikiLink?: (label: string) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onChangeRef = useRef(onChange);
+  const wikiOpenRef = useRef(onOpenWikiLink);
   const vaultRef = useRef(vault);
   const bridgeRef = useRef(bridge);
   const crepeRef = useRef<CrepeBuilder | null>(null);
   onChangeRef.current = onChange;
+  wikiOpenRef.current = onOpenWikiLink;
   vaultRef.current = vault;
   bridgeRef.current = bridge;
 
@@ -90,6 +96,7 @@ export function NoteCanvas({
     crepe.editor
       .config((ctx) => {
         configureChartSchema(ctx);
+        configureWikiSerialization(ctx);
         ctx.update(editorViewOptionsCtx, (prev) => ({
           ...prev,
           attributes: { spellcheck: "false", "aria-label": "Note editor" },
@@ -97,6 +104,7 @@ export function NoteCanvas({
       })
       .use(flatPlugins(mathPlugins))
       .use(flatPlugins(chartPlugins))
+      .use(flatPlugins(wikiPlugins))
       .use(imageDefaults)
       .use(markdownPaste);
     if (!readOnly) crepe.editor.use(renderedNodeNavigation).use(autocomplete(bridgeRef.current)).use(inlineEdit(bridgeRef.current)).use(editorShortcuts());
@@ -110,6 +118,13 @@ export function NoteCanvas({
     });
     const stopHandles = attachHandleDelay(host);
     const onClick = (event: MouseEvent) => {
+      const wiki = (event.target as HTMLElement | null)?.closest('[data-type="wiki-link"]');
+      if (wiki && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        const label = /^\[\[([^\]\n]+)\]\]$/.exec(wiki.textContent ?? "")?.[1];
+        if (label) wikiOpenRef.current?.(label.trim());
+        return;
+      }
       const anchor = (event.target as HTMLElement | null)?.closest("a");
       const href = anchor?.getAttribute("href");
       if (!anchor || !href || href.startsWith("#")) return;
@@ -182,6 +197,15 @@ export function NoteCanvas({
         view.focus();
       }),
       focus: () => crepe.editor.action((ctx) => ctx.get(editorViewCtx).focus()),
+      revealText: (text) => crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const range = editorTextRange(view.state.doc, text);
+        if (!range) return;
+        const $from = view.state.doc.resolve(range.from);
+        const selection = $from.parent.type.name === "chart_block" ? NodeSelection.create(view.state.doc, $from.before()) :
+          TextSelection.create(view.state.doc, range.from, range.to);
+        view.dispatch(view.state.tr.setSelection(selection).scrollIntoView()); view.focus();
+      }),
     };
     return () => {
       cancelled = true;

@@ -10,6 +10,10 @@ A local Markdown notebook built with Tauri and React. Notes are `.md` files in y
 - Select an idea, right-click and choose **Visualize** (or **Ctrl+Alt+V**). The edit model writes a matplotlib chart using NumPy and SciPy. Review the chart, caption and Python source, then insert it after the selection. Ctrl+Z undoes insertion; illustrative data is labeled. Desktop charts are PNG files in the vault's `assets/` folder.
 - **Ctrl+Shift+M** switches between live preview and Markdown source; **Ctrl+K** searches notes.
 - Click the space before or after a formula or chart to write beside it. Click a chart to select it, then press Delete or Backspace; Ctrl+Z restores it. At the start/end of adjacent text, Backspace/Delete first selects the object. Click a formula to edit its LaTeX; use a chart's Source button to edit its data.
+- **Ctrl+K** opens a search dialog for titles, note bodies and reference labels/URLs. Arrow keys select a result; Enter opens it and selects the matching text when present in the document. An empty query shows recently opened notes from this session.
+- **Ctrl+Shift+L** adds a local reference to a web page, Jira issue, GitHub/Gerrit change or Teams link. Use its pencil button to edit or remove it. References are stored in Markdown YAML; adding one makes no network request.
+- Write `[[Note title]]` to link notes. Ctrl+click the link or click its reference chip to open the target; stable IDs keep existing links working after a title change. Linking notes appear above the target document.
+- **History and recovery** in the toolbar lists local snapshots taken before overwrites and deletion. The latest 200 snapshots are kept per vault in `.notes-history/`; recovering a deleted note preserves a newer, different note with the same filename.
 
 Configure the Ollama address, autocomplete model and edit model in Settings → Notes. Formatting and Visualize use the edit model. Models must already be available on the configured server. Failed or incomplete responses leave the original unchanged.
 
@@ -41,6 +45,7 @@ Browser regression scripts use an isolated temporary vault. Install Playwright o
 node scripts/polish-smoke.mjs
 node scripts/visualize-smoke.mjs
 node scripts/storage-smoke.mjs
+node scripts/workspace-smoke.mjs
 node scripts/context-menu-smoke.mjs
 node scripts/editor-smoke.mjs
 node scripts/rendered-navigation-smoke.mjs
@@ -52,3 +57,5 @@ node scripts/redesign-smoke.mjs
 `visualize-smoke.mjs` mocks the model response but executes the real scientific Python worker, then checks previews, insertion, undo, errors and cancellation. `test:python` additionally checks restricted operations and renders SciPy, 3D and diagram examples. Real model output quality depends on the selected Ollama model.
 
 `storage-smoke.mjs` uses a delayed in-memory Tauri bridge to exercise navigation, folder changes, save failures and closing order without touching desktop files. `context-menu-smoke.mjs` checks clipboard actions and undo in both editors.
+
+`workspace-smoke.mjs` verifies references, stable note links and backlinks, YAML preservation, search selection, history restoration and folder isolation with a delayed in-memory Tauri bridge.
