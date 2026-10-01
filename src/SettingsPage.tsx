@@ -84,6 +84,7 @@ export function SettingsPage({
                 key={id}
                 type="button"
                 onClick={() => setSection(id)}
+                aria-current={active ? "page" : undefined}
                 className={cn(
                   "inline-flex shrink-0 items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors md:w-full",
                   active ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
@@ -130,6 +131,9 @@ function NotesSection({
         <Field id="ollama-host" label="Address" hint="Used by both autocomplete and the edit chat.">
           <input
             id="ollama-host"
+            type="url"
+            name="ollama-host"
+            autoComplete="off"
             value={settings.ollamaHost}
             spellCheck={false}
             onChange={(event) => onChange({ ollamaHost: event.target.value })}
@@ -156,8 +160,8 @@ function NotesSection({
           />
         </PrefRow>
       </PrefSection>
-      <PrefSection title="Edit" description="Select text and press Ctrl+E. The instruction applies only to that selection.">
-        <PrefRow htmlFor="edit-model" title="Edit model" description="Left empty, Ctrl+E asks you to pick one instead of reusing autocomplete.">
+      <PrefSection title="Edit & formatting" description="Ctrl+E rewrites selected text. Format in the footer organizes the whole note; Visualize in the context menu creates a chart.">
+        <PrefRow htmlFor="edit-model" title="Edit model" description="Used by editing, Markdown formatting and Visualize. Preview generated results before inserting them; Ctrl+Z undoes the change.">
           <ModelControl
             id="edit-model"
             models={models}
@@ -515,7 +519,9 @@ function ModelControl({
       <input
         id={id}
         value={value}
-        placeholder="model name"
+        placeholder="Model name…"
+        name={id}
+        autoComplete="off"
         spellCheck={false}
         onChange={(event) => onChange(event.target.value)}
         className="h-8 w-52 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"

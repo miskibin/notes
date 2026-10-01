@@ -343,16 +343,15 @@ export function clipboardText(state: EditorState): string | null {
   return text.endsWith("\n") ? text : `${text}\n`;
 }
 
-function writeClipboard(text: string): void {
+export async function writeClipboard(text: string): Promise<boolean> {
   const clipboard = navigator.clipboard;
   if (clipboard?.writeText) {
-    void clipboard.writeText(text).catch(() => writeClipboardFallback(text));
-    return;
+    try { await clipboard.writeText(text); return true; } catch { /* use the WebView fallback */ }
   }
-  writeClipboardFallback(text);
+  return writeClipboardFallback(text);
 }
 
-function writeClipboardFallback(text: string): void {
+function writeClipboardFallback(text: string): boolean {
   const area = document.createElement("textarea");
   area.value = text;
   area.setAttribute("readonly", "");
@@ -360,8 +359,9 @@ function writeClipboardFallback(text: string): void {
   area.style.left = "-9999px";
   document.body.append(area);
   area.select();
-  document.execCommand("copy");
-  area.remove();
+  try { return document.execCommand("copy"); }
+  catch { return false; }
+  finally { area.remove(); }
 }
 
 function mod(event: KeyboardEvent): boolean {

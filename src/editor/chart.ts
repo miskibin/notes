@@ -5,7 +5,6 @@ import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import type { EditorView, NodeView, ViewMutationRecord } from "@milkdown/kit/prose/view";
 import { clearTextInCurrentBlockCommand, codeBlockSchema } from "@milkdown/kit/preset/commonmark";
 import { $inputRule, $view } from "@milkdown/kit/utils";
-import embed from "vega-embed";
 import type { View } from "vega";
 import { chartLanguage, compileChartSource, paramNames, writeParamValues } from "./chart-dsl";
 
@@ -66,6 +65,8 @@ class ChartView implements NodeView {
     this.mount.className = "chart-mount";
     this.message = document.createElement("p");
     this.message.className = "chart-message";
+    this.message.setAttribute("role", "status");
+    this.message.setAttribute("aria-live", "polite");
 
     const actions = document.createElement("div");
     actions.className = "chart-actions";
@@ -86,6 +87,7 @@ class ChartView implements NodeView {
     const summary = document.createElement("summary");
     summary.textContent = "Source";
     this.textarea = document.createElement("textarea");
+    this.textarea.setAttribute("aria-label", "Chart source");
     this.textarea.spellcheck = false;
     this.textarea.value = node.textContent;
     this.details.append(summary, this.textarea);
@@ -205,8 +207,10 @@ class ChartView implements NodeView {
       this.details.open = true;
       return;
     }
-    this.message.textContent = "";
+    this.message.textContent = "Loading chart…";
     try {
+      const { default: embed } = await import("vega-embed");
+      if (token !== this.token) return;
       const mode = document.documentElement.dataset.colorMode === "light" ? undefined : "dark";
       const tokens = getComputedStyle(document.documentElement);
       const muted = tokens.getPropertyValue("--muted-foreground").trim();
@@ -239,6 +243,7 @@ class ChartView implements NodeView {
         return;
       }
       this.finalize = result.finalize;
+      this.message.textContent = "";
       this.vegaView = result.view;
       this.renderedSource = source;
       this.saveButton.disabled = paramNames(String(this.node.attrs.language ?? ""), source).length === 0;

@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { WELCOME_NOTE, countLines, titleFrom, type NoteFile } from "./notes";
+import { FORMAT_SYSTEM, cleanFormattedNote, validateFormatInput } from "./formatting";
+import visualizePrompt from "./visualize/prompt.txt?raw";
+import { parseRecipe, validateIdea, type ChartRecipe } from "./visualize/recipe";
 
 export type CompletionResult = {
   text: string;
@@ -145,6 +148,48 @@ export async function editSelection(
   return invoke<string>("edit_selection", { host, model, instruction, text });
 }
 
+export async function formatNote(host: string, model: string, text: string, signal?: AbortSignal): Promise<string> {
+  validateFormatInput(text);
+  if (!model.trim()) throw new Error("Choose an edit model in Settings to format notes.");
+  if (isTauri()) {
+    return cleanFormattedNote(await invoke<string>("format_note", { host, model, text }));
+  }
+  const response = await fetch(`${host.trim().replace(/\/+$/, "")}/api/chat`, {
+    method: "POST",
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model, stream: false, think: false, keep_alive: "30m",
+      messages: [
+        { role: "system", content: FORMAT_SYSTEM },
+        { role: "user", content: `Format this note:\n\n${text}` },
+      ],
+      options: { temperature: 0.1, num_predict: Math.min(16_384, Math.max(1024, Array.from(text).length + 512)) },
+    }),
+  });
+  const body = await response.json() as { message?: { content?: string }; done_reason?: string; error?: string };
+  if (!response.ok || body.error) throw new Error(body.error || "Ollama request failed. Check the address and edit model in Settings.");
+  if (body.done_reason === "length") throw new Error("The model stopped before finishing. Try a shorter note or another edit model.");
+  return cleanFormattedNote(body.message?.content ?? "");
+}
+
+export async function visualizeIdea(host: string, model: string, text: string, signal: AbortSignal): Promise<ChartRecipe> {
+  validateIdea(text);
+  if (!model.trim()) throw new Error("Choose an edit model in Settings to visualize ideas.");
+  if (isTauri()) return parseRecipe(await invoke<string>("visualize_selection", { host, model, text }));
+  const response = await fetch(`${host.trim().replace(/\/+$/, "")}/api/chat`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
+    body: JSON.stringify({ model, stream: false, think: false, format: "json", keep_alive: "30m",
+      messages: [{ role: "system", content: visualizePrompt }, { role: "user", content: `Visualize this idea:\n\n${text}` }],
+      options: { temperature: 0.2, num_predict: 8192 } }),
+  });
+  const body = await response.json() as { message?: { content?: string }; error?: string; done_reason?: string };
+  if (!response.ok || body.error) throw new Error(body.error || "Ollama request failed. Check the edit model in Settings.");
+  if (body.done_reason === "length") throw new Error("The model stopped before finishing the chart. Try a shorter idea.");
+  return parseRecipe(body.message?.content ?? "");
+}
+
 function extensionOf(file: File): string {
   const fromName = file.name.split(".").pop()?.toLowerCase() ?? "";
   if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(fromName)) return fromName;
@@ -172,7 +217,7 @@ function mimeFor(src: string): string {
 }
 
 async function listModelsOverHttp(host: string): Promise<string[]> {
-  const response = await fetch(`${host.replace(/\/$/, "")}/api/tags`);
+  const response = await fetch(`${host.replace(/\/$/, "")}/api/tags`, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error("Ollama is not running at that address.");
   const body = (await response.json()) as { models?: { name?: string }[] };
   return (body.models ?? [])
@@ -212,6 +257,7 @@ async function editOverHttp(host: string, model: string, instruction: string, te
 async function completeOverHttp(host: string, model: string, line: string): Promise<CompletionResult> {
   const response = await fetch(`${host.replace(/\/$/, "")}/api/generate`, {
     method: "POST",
+    signal: AbortSignal.timeout(8000),
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       model,

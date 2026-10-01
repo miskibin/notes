@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from "@codemirror/commands";
 import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { markdown as markdownLanguage } from "@codemirror/lang-markdown";
 import { searchKeymap } from "@codemirror/search";
-import type { EditorHandleRef } from "./editor-handle";
+import type { EditorHandle, EditorHandleRef } from "./editor-handle";
 import { sourceSyntax } from "./source-syntax";
 
 export function SourceCanvas({ noteKey, markdown, onChange, editorHandle }: {
@@ -37,7 +37,34 @@ export function SourceCanvas({ noteKey, markdown, onChange, editorHandle }: {
       }),
     });
     viewRef.current = view;
-    const handle = { getMarkdown: () => view.state.doc.toString() };
+    const handle: EditorHandle = { getMarkdown: () => view.state.doc.toString(), replaceMarkdown: (next: string) => {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next },
+        annotations: [isolateHistory.of("full"), Transaction.userEvent.of("input.format")] });
+      view.focus();
+    },
+      getSelection: (includeEmpty = false) => {
+        const { from, to } = view.state.selection.main;
+        const text = view.state.sliceDoc(from, to);
+        return includeEmpty || text.trim() ? { text, from, to, document: view.state.doc.toString() } : null;
+      },
+      replaceSelection: (text, selection) => {
+        if (view.state.doc.toString() !== selection.document) throw new Error("The note changed. Select the current text again.");
+        const insert = text.replace(/\r\n?/g, "\n");
+        view.dispatch({ changes: { from: selection.from, to: selection.to, insert },
+          selection: { anchor: selection.from + insert.length }, annotations: isolateHistory.of("full") });
+        view.focus();
+      },
+      selectAll: () => { view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } }); view.focus(); },
+      insertAfterSelection: (next, selection) => {
+        if (view.state.doc.toString() !== selection.document) throw new Error("The note changed. Visualize the current selection again.");
+        const at = view.state.doc.lineAt(selection.to).to;
+        const insert = `\n\n${next.trim()}\n\n`;
+        view.dispatch({ changes: { from: at, insert }, selection: { anchor: at + insert.length },
+          annotations: [isolateHistory.of("full"), Transaction.userEvent.of("input.visualize")] });
+        view.focus();
+      },
+      focus: () => view.focus(),
+    };
     editorHandle.current = handle;
     view.focus();
     return () => {

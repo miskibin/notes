@@ -100,7 +100,8 @@ export function Sidebar({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "k" || event.isComposing) return;
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey || event.defaultPrevented ||
+          document.querySelector("dialog[open]") || event.key.toLowerCase() !== "k" || event.isComposing) return;
       event.preventDefault();
       setCollapsed(false);
       setSearching(true);

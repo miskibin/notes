@@ -17,6 +17,8 @@ pub fn run() {
             ollama::list_models,
             ollama::complete_line,
             ollama::edit_selection,
+            ollama::format_note,
+            ollama::visualize_selection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

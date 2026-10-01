@@ -1,8 +1,10 @@
-import { Plugin, PluginKey, TextSelection } from "@milkdown/kit/prose/state";
+import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet } from "@milkdown/kit/prose/view";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { $prose } from "@milkdown/kit/utils";
 import { completionPlan, prepareGhost } from "./text";
+
+export type CompletionStatus = "idle" | "loading" | "suggestion" | "error";
 
 export type CompleteBridge = {
   enabled: boolean;
@@ -10,6 +12,7 @@ export type CompleteBridge = {
   editModel: string;
   complete: (line: string) => Promise<{ text: string; truncated: boolean }>;
   edit: (instruction: string, text: string) => Promise<string>;
+  report?: (status: CompletionStatus, error?: string) => void;
 };
 
 type Ghost = { text: string; pos: number } | null;
@@ -37,17 +40,27 @@ export function autocomplete(bridge: { current: CompleteBridge }) {
   return $prose(() => {
     let request = 0;
     let timer = 0;
+    let lastEnabled = bridge.current.enabled;
+    let lastModel = bridge.current.model;
+    let lastStatus: CompletionStatus = "idle";
+    const report = (status: CompletionStatus, error?: string) => {
+      lastStatus = status;
+      bridge.current.report?.(status, error);
+    };
 
     const schedule = (view: EditorView) => {
       window.clearTimeout(timer);
       const ticket = ++request;
+      report("idle");
+      if (ghostKey.getState(view.state)) setGhost(view, null);
+      if (!bridge.current.enabled || !view.hasFocus()) return;
       timer = window.setTimeout(() => {
         void run(view, ticket);
       }, 220);
     };
 
     const run = async (view: EditorView, ticket: number) => {
-      if (ticket !== request || view.isDestroyed || view.composing) return;
+      if (ticket !== request || view.isDestroyed || view.composing || !view.hasFocus()) return;
       const context = blockContext(view);
       if (!context) {
         setGhost(view, null);
@@ -69,20 +82,25 @@ export function autocomplete(bridge: { current: CompleteBridge }) {
       if (plan.kind === "local") {
         if (ticket !== request) return;
         setGhost(view, { text: plan.text, pos });
+        report("suggestion");
         return;
       }
       let result: { text: string; truncated: boolean };
+      report("loading");
       try {
         result = await current.complete(plan.prompt);
-      } catch {
-        if (ticket === request && ghostKey.getState(view.state)) setGhost(view, null);
+      } catch (error) {
+        if (ticket !== request || view.isDestroyed) return;
+        if (ghostKey.getState(view.state)) setGhost(view, null);
+        report("error", error instanceof Error ? error.message : String(error));
         return;
       }
       if (ticket !== request || view.isDestroyed) return;
       const next = blockContext(view);
-      if (!next || next.before !== context.before || view.state.selection.from !== pos) return;
+      if (!next || next.before !== context.before || view.state.selection.from !== pos) { report("idle"); return; }
       const text = prepareGhost(plan.prefixLine, result.text, result.truncated);
       setGhost(view, text ? { text, pos } : null);
+      report(text ? "suggestion" : "idle");
     };
 
     return new Plugin<Ghost>({
@@ -98,6 +116,16 @@ export function autocomplete(bridge: { current: CompleteBridge }) {
         },
       },
       props: {
+        handleDOMEvents: {
+          focus(view) { schedule(view); return false; },
+          blur(view) {
+            window.clearTimeout(timer);
+            request += 1;
+            if (ghostKey.getState(view.state)) setGhost(view, null);
+            if (lastStatus !== "error") report("idle");
+            return false;
+          },
+        },
         decorations(state) {
           const ghost = ghostKey.getState(state);
           if (!ghost?.text) return null;
@@ -119,6 +147,7 @@ export function autocomplete(bridge: { current: CompleteBridge }) {
           if (event.key === "Escape") {
             event.preventDefault();
             setGhost(view, null);
+            report("idle");
             return true;
           }
           if (event.key === "Tab" && !event.shiftKey) {
@@ -135,13 +164,16 @@ export function autocomplete(bridge: { current: CompleteBridge }) {
       view() {
         return {
           update(view, previous) {
-            if (view.state.doc.eq(previous.doc) && view.state.selection.eq(previous.selection)) return;
-            if (!(view.state.selection instanceof TextSelection)) return;
+            if (view.state.doc.eq(previous.doc) && view.state.selection.eq(previous.selection) &&
+              bridge.current.enabled === lastEnabled && bridge.current.model === lastModel) return;
+            lastEnabled = bridge.current.enabled;
+            lastModel = bridge.current.model;
             schedule(view);
           },
           destroy() {
             window.clearTimeout(timer);
             request += 1;
+            report("idle");
           },
         };
       },

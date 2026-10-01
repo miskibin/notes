@@ -50,13 +50,13 @@ export function compileVegaLite(source: string): CompiledChart | { error: string
   }
 }
 
-/** Drop remote loads. The note app feeds Vega only data that is already in the file. */
+/** Keep charts self-contained, including marks and links. */
 export function sanitizeSpec(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((item) => sanitizeSpec(item));
   if (!value || typeof value !== "object") return value;
   const next: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (key === "url") continue;
+    if (key === "url" || key === "href") continue;
     next[key] = sanitizeSpec(child);
   }
   return next;
@@ -103,8 +103,11 @@ export function paramNames(language: string, source: string): string[] {
   }
 }
 
-function functionChart(record: Record<string, unknown>, expression: string): CompiledChart {
+function functionChart(record: Record<string, unknown>, expression: string): CompiledChart | { error: string } {
   const range = axisRange(record.x);
+  const points = (range.max - range.min) / range.step;
+  if (!Number.isFinite(points) || points <= 0) return { error: "The x maximum must be greater than the minimum." };
+  if (points > 10_000) return { error: "This chart has too many samples. Increase the x step (10,000 samples maximum)." };
   return {
     spec: baseSpec({
       params: vegaParams(record.params),

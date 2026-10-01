@@ -158,6 +158,8 @@ export function inlineEdit(bridge: { current: CompleteBridge }) {
       button.textContent = "Apply";
       const status = document.createElement("p");
       status.className = "inline-edit-status";
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
       status.hidden = true;
       row.append(input, button);
       form.append(row, status);

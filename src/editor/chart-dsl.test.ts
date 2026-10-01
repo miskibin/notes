@@ -70,7 +70,7 @@ data:
     expect("error" in compiled).toBe(false);
     if ("error" in compiled) return;
     expect(compiled.spec.data).toEqual({ values: [{ x: 1 }] });
-    expect(sanitizeSpec({ url: "https://example.com" })).toEqual({});
+    expect(sanitizeSpec({ url: "https://example.com", encoding: { href: { value: "javascript:alert(1)" } } })).toEqual({ encoding: {} });
     const saved = writeParamValues("vega-lite", source, { gain: 3.7 });
     expect(JSON.parse(saved).params[0].value).toBe(3.7);
   });
@@ -81,5 +81,10 @@ data:
     expect("error" in compiled).toBe(false);
     if ("error" in compiled) return;
     expect((compiled.spec.params as { value: number }[])[0]?.value).toBe(3.7);
+  });
+  it("rejects unbounded or empty function sampling before rendering", () => {
+    expect(compileChart("y: x\nx: {min: 0, max: 10, step: 0.00000001}")).toHaveProperty("error");
+    expect(compileChart("y: x\nx: {min: 10, max: 0}")).toHaveProperty("error");
+    expect(compileChart("y: x\nx: {min: -1.0e308, max: 1.0e308}")).toHaveProperty("error");
   });
 });

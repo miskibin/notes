@@ -13,14 +13,23 @@ pub struct NoteFile {
     pub line_count: usize,
 }
 
+fn invalid_file_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
+    name.is_empty()
+        || name
+            .chars()
+            .any(|ch| ch.is_control() || "/\\:<>\"|?*".contains(ch))
+        || name.ends_with(['.', ' '])
+        || name.contains("..")
+        || matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+}
+
 pub fn note_file_name(name: &str) -> Result<String, String> {
     let name = name.trim();
-    if name.is_empty()
-        || name.contains(['/', '\\', '\0'])
-        || name.contains("..")
-        || !name.to_ascii_lowercase().ends_with(".md")
-        || name == ".md"
-    {
+    if invalid_file_name(name) || !name.to_ascii_lowercase().ends_with(".md") || name == ".md" {
         return Err("Invalid note name".into());
     }
     Ok(name.to_string())
@@ -31,7 +40,7 @@ fn asset_file_name(relative: &str) -> Result<String, String> {
     let Some(name) = relative.strip_prefix("assets/") else {
         return Err("Not an asset path".into());
     };
-    if name.is_empty() || name.contains(['/', '\\', '\0']) || name.contains("..") {
+    if invalid_file_name(name) {
         return Err("Invalid asset path".into());
     }
     Ok(name.to_string())
@@ -63,9 +72,7 @@ fn markdown_title(head: &str, filename: &str) -> String {
     for line in head.lines() {
         let line = line.trim();
         let hashes = line.chars().take_while(|ch| *ch == '#').count();
-        if (1..=6).contains(&hashes)
-            && line.as_bytes().get(hashes) == Some(&b' ')
-        {
+        if (1..=6).contains(&hashes) && line.as_bytes().get(hashes) == Some(&b' ') {
             let title = line[hashes..].trim();
             if !title.is_empty() {
                 return title.to_string();
@@ -125,7 +132,11 @@ pub fn list_notes(vault: String) -> Result<Vec<NoteFile>, String> {
             line_count: markdown_line_count(&body),
         });
     }
-    notes.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms).then(a.title.cmp(&b.title)));
+    notes.sort_by(|a, b| {
+        b.modified_ms
+            .cmp(&a.modified_ms)
+            .then(a.title.cmp(&b.title))
+    });
     Ok(notes)
 }
 
@@ -220,6 +231,10 @@ mod tests {
         assert!(note_file_name("../secret.md").is_err());
         assert!(note_file_name("nested/note.md").is_err());
         assert!(note_file_name("note.txt").is_err());
+        assert!(note_file_name("note.md:payload.md").is_err());
+        assert!(note_file_name("CON.md").is_err());
+        assert!(note_file_name("LPT1.md").is_err());
+        assert!(note_file_name("żółć.md").is_ok());
     }
 
     #[test]
@@ -227,6 +242,7 @@ mod tests {
         assert_eq!(asset_file_name("assets/a.png").unwrap(), "a.png");
         assert!(asset_file_name("assets/../note.md").is_err());
         assert!(asset_file_name("note.md").is_err());
+        assert!(asset_file_name("assets/a.png:stream").is_err());
     }
 
     #[test]

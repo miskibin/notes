@@ -1,10 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AppHeader } from "./AppHeader";
+import { AppFooter } from "./AppFooter";
+import { FormatDialog } from "./FormatDialog";
+import { canApplyFormat, validateFormatInput, type FormatSnapshot } from "./formatting";
 import { applyAppearance, stepTextZoom } from "./appearance";
 import { NoteCanvas } from "./editor/NoteCanvas";
 import { SourceCanvas } from "./editor/SourceCanvas";
-import type { EditorHandle } from "./editor/editor-handle";
-import type { CompleteBridge } from "./editor/autocomplete";
+import type { EditorHandle, EditorSelection } from "./editor/editor-handle";
+import { EditorContextMenu } from "./editor/EditorContextMenu";
+import { chartMarkdown, validateIdea, type ChartRecipe } from "./visualize/recipe";
+import type { ChartImage } from "./visualize/python";
+import type { CompleteBridge, CompletionStatus } from "./editor/autocomplete";
 import { countLines, newNoteName, retitle, titleFrom, type NoteFile } from "./notes";
 import { readSettings, writeSettings, type Settings } from "./settings";
 import { SettingsPage } from "./SettingsPage";
@@ -17,6 +24,7 @@ import {
   type SidebarMeta,
 } from "./sidebar-meta";
 import { textZoomDirection } from "./text-zoom";
+import { createSaveQueue } from "./save-queue";
 import {
   completeLine,
   defaultVaultDir,
@@ -29,10 +37,13 @@ import {
   pickVaultDir,
   readNote,
   writeNote,
+  saveImage,
 } from "./vault-api";
 
 type Screen = "notes" | "settings";
 type SaveState = "saved" | "saving" | "error";
+type VisualSession = { note: string; vault: string; selection: EditorSelection; editor: EditorHandle };
+const VisualizeDialog = lazy(() => import("./visualize/VisualizeDialog"));
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => readSettings());
@@ -49,6 +60,14 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const [meta, setMeta] = useState<SidebarMeta>({ pinned: [], projects: [] });
+  const [completionStatus, setCompletionStatus] = useState<CompletionStatus>("idle");
+  const [completionError, setCompletionError] = useState<string | null>(null);
+  const [formatSession, setFormatSession] = useState<FormatSnapshot | null>(null);
+  const openingFormat = useRef(false);
+  const transitionBusy = useRef(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [visualSession, setVisualSession] = useState<VisualSession | null>(null);
+  const visualRef = useRef<VisualSession | null>(null);
 
   const settingsRef = useRef(settings);
   const activeRef = useRef(active);
@@ -58,6 +77,8 @@ export default function App() {
   const columnRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<number>(0);
+  const enqueueSave = useRef(createSaveQueue());
+  const refreshId = useRef(0);
   const bridge = useRef<CompleteBridge>({
     enabled: false,
     model: "",
@@ -74,6 +95,10 @@ export default function App() {
     complete: (line) => completeLine(settingsRef.current.ollamaHost, settingsRef.current.model, line),
     edit: (instruction, text) =>
       editSelection(settingsRef.current.ollamaHost, settingsRef.current.editModel, instruction, text),
+    report: (status, error) => {
+      setCompletionStatus(status);
+      setCompletionError(error ?? null);
+    },
   };
 
   const persist = useCallback((next: Settings) => {
@@ -81,6 +106,15 @@ export default function App() {
     setSettings(next);
     writeSettings(next);
     applyAppearance(next);
+  }, []);
+
+  const transition = useCallback(async (operation: () => Promise<void>) => {
+    if (transitionBusy.current) return;
+    transitionBusy.current = true;
+    setTransitioning(true);
+    try { await operation(); setLoadError(null); }
+    catch (error) { setLoadError(errorText(error)); }
+    finally { transitionBusy.current = false; setTransitioning(false); }
   }, []);
 
   useEffect(() => {
@@ -113,30 +147,24 @@ export default function App() {
   }, [settings.colorMode]);
 
   const refreshNotes = useCallback(async (vault: string, prefer?: string) => {
+    const ticket = ++refreshId.current;
     await ensureWelcome(vault);
     const listed = await listNotes(vault);
-    const names = listed.map((note) => note.name);
-    const pruned = pruneMeta(readMeta(vault), names);
-    writeMeta(vault, pruned);
-    setMeta(pruned);
-    setNotes(listed);
     const name = listed.some((note) => note.name === prefer)
       ? prefer
       : listed.some((note) => note.name === activeRef.current)
         ? activeRef.current
         : (listed[0]?.name ?? null);
-    if (!name) {
-      setActive(null);
-      setMarkdown("");
-      draftRef.current = "";
-      savedRef.current = "";
-      return;
-    }
-    const body = await readNote(vault, name);
+    const body = name ? await readNote(vault, name) : "";
+    if (ticket !== refreshId.current) return;
+    const pruned = pruneMeta(readMeta(vault), listed.map((note) => note.name));
+    writeMeta(vault, pruned);
+    setMeta(pruned);
+    setNotes(listed);
     draftRef.current = body;
     savedRef.current = body;
     setMarkdown(body);
-    setActive(name);
+    setActive(name ?? null);
     setSaveState("saved");
   }, []);
 
@@ -148,16 +176,43 @@ export default function App() {
     draftRef.current = body;
     setMarkdown(body);
     if (!name || !vault) return;
-    if (body === savedRef.current) return;
-    await writeNote(vault, name, body);
-    savedRef.current = body;
+    if (body === savedRef.current && !enqueueSave.current.isPending()) { setSaveState("saved"); return; }
+    setSaveState("saving");
+    try {
+      await enqueueSave.current(() => writeNote(vault, name, body));
+    } catch (error) {
+      setSaveState("error");
+      throw error;
+    }
+    if (activeRef.current === name && settingsRef.current.vault === vault) savedRef.current = body;
     setNotes((current) =>
       current.map((note) =>
         note.name === name ? { ...note, title: titleFrom(body, name), line_count: countLines(body), modified_ms: Date.now() } : note,
       ),
     );
-    setSaveState("saved");
+    if (activeRef.current === name && settingsRef.current.vault === vault && draftRef.current === body) setSaveState("saved");
   }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    let closing = false;
+    const appWindow = getCurrentWindow();
+    const listening = appWindow.onCloseRequested((event) => {
+      event.preventDefault();
+      if (closing || transitionBusy.current) return;
+      closing = true;
+      transitionBusy.current = true;
+      setTransitioning(true);
+      void flush().then(async () => {
+        await appWindow.destroy();
+      }).catch((error: unknown) => {
+        setLoadError(errorText(error));
+      }).finally(() => { closing = false; transitionBusy.current = false; setTransitioning(false); });
+    });
+    void listening.then((unlisten) => { if (disposed) unlisten(); }).catch((error: unknown) => setLoadError(errorText(error)));
+    return () => { disposed = true; void listening.then((unlisten) => unlisten()).catch(() => undefined); };
+  }, [flush]);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,6 +238,7 @@ export default function App() {
     })();
     return () => {
       cancelled = true;
+      refreshId.current += 1;
     };
   }, [persist, refreshNotes]);
 
@@ -191,6 +247,7 @@ export default function App() {
       draftRef.current = next;
       setMarkdown(next);
       const nameNow = activeRef.current;
+      const vaultNow = settingsRef.current.vault;
       if (nameNow) {
         setNotes((current) =>
           current.map((note) => (note.name === nameNow ? { ...note, title: titleFrom(next, nameNow), line_count: countLines(next) } : note)),
@@ -199,13 +256,14 @@ export default function App() {
       setSaveState("saving");
       window.clearTimeout(saveTimer.current);
       saveTimer.current = window.setTimeout(() => {
-        const name = activeRef.current;
-        const vault = settingsRef.current.vault;
-        if (!name) return;
-        void writeNote(vault, name, next)
+        const name = nameNow;
+        const vault = vaultNow;
+        if (!name || activeRef.current !== name || settingsRef.current.vault !== vault) return;
+        void enqueueSave.current(() => writeNote(vault, name, next))
           .then(() => {
-            if (draftRef.current !== next) return;
+            if (activeRef.current !== name || settingsRef.current.vault !== vault) return;
             savedRef.current = next;
+            if (draftRef.current !== next) return;
             setSaveState("saved");
             setNotes((current) =>
               current
@@ -217,18 +275,21 @@ export default function App() {
                 .sort((a, b) => b.modified_ms - a.modified_ms),
             );
           })
-          .catch(() => setSaveState("error"));
+          .catch(() => {
+            if (activeRef.current === name && settingsRef.current.vault === vault) setSaveState("error");
+          });
       }, 400);
     },
     [],
   );
 
   const openNote = async (name: string) => {
+    if (transitionBusy.current) return;
     if (name === activeRef.current) {
       setScreen("notes");
       return;
     }
-    try {
+    await transition(async () => {
       await flush();
       const body = await readNote(settingsRef.current.vault, name);
       draftRef.current = body;
@@ -237,21 +298,17 @@ export default function App() {
       setActive(name);
       setScreen("notes");
       setSaveState("saved");
-    } catch (error) {
-      setLoadError(errorText(error));
-    }
+    });
   };
 
   const createNote = async () => {
-    try {
+    await transition(async () => {
       await flush();
       const name = newNoteName(notes.map((note) => note.name));
       await writeNote(settings.vault, name, "");
       await refreshNotes(settings.vault, name);
       setScreen("notes");
-    } catch (error) {
-      setLoadError(errorText(error));
-    }
+    });
   };
 
   const commitMeta = (next: SidebarMeta) => {
@@ -262,7 +319,7 @@ export default function App() {
   const renameTitle = async (name: string, title: string) => {
     const nextTitle = title.trim();
     if (!nextTitle) return;
-    try {
+    await transition(async () => {
       const current = name === activeRef.current ? draftRef.current : await readNote(settingsRef.current.vault, name);
       const next = retitle(current, nextTitle);
       if (next === current) return;
@@ -275,9 +332,7 @@ export default function App() {
       }
       await writeNote(settingsRef.current.vault, name, next);
       setNotes((items) => items.map((note) => (note.name === name ? { ...note, title: titleFrom(next, name), line_count: countLines(next), modified_ms: Date.now() } : note)));
-    } catch (error) {
-      setLoadError(errorText(error));
-    }
+    });
   };
 
   const reorderLoose = (names: string[]) => {
@@ -291,12 +346,13 @@ export default function App() {
   };
 
   const removeNotes = async (names: string[]) => {
-    if (names.length === 0) return;
+    if (names.length === 0 || transitionBusy.current) return;
     const label = names.length === 1 ? names[0] : `${names.length} notes`;
     if (!window.confirm(`Delete ${label}?`)) return;
     window.clearTimeout(saveTimer.current);
     const drop = new Set(names);
-    try {
+    await transition(async () => {
+      await flush();
       for (const name of names) await deleteNote(settings.vault, name);
       let nextMeta = readMeta(settings.vault);
       for (const name of names) nextMeta = forgetNote(nextMeta, name);
@@ -317,9 +373,7 @@ export default function App() {
       savedRef.current = body;
       setMarkdown(body);
       setActive(next);
-    } catch (error) {
-      setLoadError(errorText(error));
-    }
+    });
   };
 
   const refreshModels = async (host: string) => {
@@ -334,15 +388,78 @@ export default function App() {
   };
 
   const headerTitle = active ? titleFrom(markdown, active) : "";
+  const words = markdown.match(/[\p{L}\p{N}]+(?:['’_-][\p{L}\p{N}]+)*/gu)?.length ?? 0;
+  const openFormat = async () => {
+    if (openingFormat.current || formatSession || visualRef.current || transitionBusy.current) return;
+    openingFormat.current = true;
+    try {
+      const original = editorHandle.current?.getMarkdown() ?? draftRef.current;
+      const snapshot = { note: activeRef.current ?? "", vault: settingsRef.current.vault, original };
+      validateFormatInput(original);
+      await flush();
+      if (!snapshot.note || !canApplyFormat(snapshot, {
+        note: activeRef.current ?? "", vault: settingsRef.current.vault,
+        original: editorHandle.current?.getMarkdown() ?? draftRef.current,
+      })) return;
+      setLoadError(null);
+      setFormatSession(snapshot);
+    } catch (error) {
+      setLoadError(errorText(error));
+    } finally {
+      openingFormat.current = false;
+    }
+  };
+  const applyFormat = (formatted: string): string | null => {
+    const handle = editorHandle.current;
+    if (!handle || !formatSession || !canApplyFormat(formatSession, {
+      note: activeRef.current ?? "", vault: settingsRef.current.vault, original: handle.getMarkdown(),
+    })) return "The note changed while formatting. Discard this preview and format the current version.";
+    try {
+      handle.replaceMarkdown(formatted);
+      setFormatSession(null);
+      setLoadError(null);
+      return null;
+    } catch (error) {
+      return errorText(error);
+    }
+  };
   const toggleSource = useCallback(() => {
     const latest = editorHandle.current?.getMarkdown();
     if (latest != null && latest !== draftRef.current) onChange(latest);
     setSourceMode((current) => !current);
   }, [onChange]);
+  const openVisualize = (selection: EditorSelection) => {
+    const editor = editorHandle.current;
+    if (!editor || !activeRef.current || formatSession || visualRef.current) return;
+    try {
+      validateIdea(selection.text);
+      const session = { note: activeRef.current, vault: settingsRef.current.vault, editor, selection };
+      visualRef.current = session;
+      setVisualSession(session);
+    } catch (error) { setLoadError(errorText(error)); }
+  };
+  const closeVisualize = () => {
+    visualRef.current = null;
+    setVisualSession(null);
+  };
+  const insertChart = async (recipe: ChartRecipe, image: ChartImage): Promise<string | null> => {
+    const session = visualRef.current;
+    const valid = () => session && visualRef.current === session && editorHandle.current === session.editor &&
+      activeRef.current === session.note && settingsRef.current.vault === session.vault &&
+      session.editor.getMarkdown() === session.selection.document;
+    if (!session || !valid()) return "The note changed. Visualize the current selection again.";
+    const bytes = Uint8Array.from(atob(image.dataUrl.split(",")[1]), (character) => character.charCodeAt(0));
+    const asset = await saveImage(session.vault, new File([bytes], "visualization.png", { type: "image/png" }));
+    if (!valid()) return "The note changed. Visualize the current selection again.";
+    session.editor.insertAfterSelection(chartMarkdown(recipe, asset), session.selection);
+    closeVisualize();
+    setLoadError(null);
+    return null;
+  };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (screen !== "notes" || event.isComposing || !(event.ctrlKey || event.metaKey) || !event.shiftKey || event.key.toLowerCase() !== "m") return;
+      if (screen !== "notes" || document.querySelector("dialog[open]") || event.isComposing || !(event.ctrlKey || event.metaKey) || !event.shiftKey || event.key.toLowerCase() !== "m") return;
       event.preventDefault();
       toggleSource();
     };
@@ -351,14 +468,11 @@ export default function App() {
   }, [screen, toggleSource]);
   const navigate = async (next: Screen) => {
     if (next === screen) return;
-    try {
+    await transition(async () => {
       if (screen === "notes") await flush();
       setScreen(next);
       if (next === "settings") void refreshModels(settingsRef.current.ollamaHost);
-    } catch (error) {
-      setSaveState("error");
-      setLoadError(errorText(error));
-    }
+    });
   };
 
   useEffect(() => {
@@ -390,7 +504,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="app-body">
+      <div className="app-body" inert={transitioning} aria-busy={transitioning}>
       <Sidebar
         notes={notes}
         active={active}
@@ -408,11 +522,11 @@ export default function App() {
         screen={screen}
         onSettings={() => void navigate("settings")}
       />
-      <main className="note-column" ref={columnRef}>
+      <main id="note-content" className="note-column" ref={columnRef}>
         <AppHeader title={headerTitle} screen={screen} sourceMode={sourceMode} onToggleSource={toggleSource} onNavigate={(next) => void navigate(next)} />
         <div className={`note-scroll${screen === "settings" ? " note-scroll-settings" : ""}`} ref={scrollRef}>
         {!ready ? <p className="empty">Opening notes…</p> : null}
-        {loadError ? <p className="error-line">{loadError}</p> : null}
+        {loadError ? <div className="error-line" role="alert"><span>{loadError}</span><button type="button" onClick={() => setLoadError(null)}>Dismiss</button></div> : null}
         {ready && screen === "settings" ? (
           <SettingsPage
             settings={settings}
@@ -423,34 +537,45 @@ export default function App() {
             onPickFolder={() => {
               void pickVaultDir().then(async (folder) => {
                 if (!folder) return;
-                await flush();
-                persist({ ...settingsRef.current, vault: folder });
-                await refreshNotes(folder);
-                setScreen("notes");
-              });
+                await transition(async () => {
+                  await flush();
+                  await refreshNotes(folder);
+                  persist({ ...settingsRef.current, vault: folder });
+                  setScreen("notes");
+                });
+              }).catch((error: unknown) => setLoadError(errorText(error)));
             }}
             onBack={() => void navigate("notes")}
           />
         ) : null}
         {ready && screen === "notes" && active ? (
-          sourceMode ? <SourceCanvas
-            noteKey={`${active}:${epoch}`}
+          <EditorContextMenu editorHandle={editorHandle} onVisualize={openVisualize}>{sourceMode ? <SourceCanvas
+            noteKey={`${settings.vault}:${active}:${epoch}`}
             markdown={markdown}
             onChange={onChange}
             editorHandle={editorHandle}
           /> : <NoteCanvas
-            noteKey={`${active}:${epoch}`}
+            noteKey={`${settings.vault}:${active}:${epoch}`}
             markdown={markdown}
             vault={settings.vault}
             bridge={bridge}
             onChange={onChange}
             editorHandle={editorHandle}
-          />
+          />}</EditorContextMenu>
         ) : null}
         {ready && screen === "notes" && !active && !loadError ? <p className="empty">No notes yet.</p> : null}
         </div>
       </main>
       </div>
+      <AppFooter saveState={saveState} words={words} enabled={settings.autocomplete} model={settings.model}
+        status={completionStatus} error={completionError} sourceMode={sourceMode} editing={ready && screen === "notes" && Boolean(active)}
+        formatting={formatSession !== null || visualSession !== null || transitioning} onToggle={() => persist({ ...settingsRef.current, autocomplete: !settingsRef.current.autocomplete })}
+        onFormat={() => void openFormat()} onRetrySave={() => void flush().catch((error: unknown) => setLoadError(errorText(error)))} />
+      {formatSession ? <FormatDialog snapshot={formatSession} host={settings.ollamaHost} model={settings.editModel}
+        onClose={() => setFormatSession(null)} onApply={applyFormat}
+        onSettings={() => { setFormatSession(null); void navigate("settings"); }} /> : null}
+      {visualSession ? <Suspense fallback={null}><VisualizeDialog idea={visualSession.selection.text} host={settings.ollamaHost} model={settings.editModel}
+        onClose={closeVisualize} onInsert={insertChart} onSettings={() => { closeVisualize(); void navigate("settings"); }} /></Suspense> : null}
     </div>
   );
 }

@@ -212,11 +212,14 @@ body,
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   --document-title-opacity: 0;
 }
 
 .note-scroll {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   scroll-padding-top: calc(var(--toolbar-height) + 32px);
@@ -551,21 +554,21 @@ body,
 
 .inline-edit-status {
   margin: 6px 0 0;
-  color: #8d8d8d;
+  color: var(--muted-foreground);
   font-size: 13px;
 }
 
 .inline-edit-status.error {
-  color: #f0a8a8;
+  color: var(--destructive);
 }
 
 .note-canvas .inline-edit-range {
-  background: rgba(236, 236, 236, 0.16);
+  background: color-mix(in oklch, var(--foreground) 16%, transparent);
   border-radius: 2px;
 }
 
 .note-canvas .ghost-text {
-  color: #6f6f6f;
+  color: var(--muted-foreground);
   pointer-events: none;
   white-space: pre-wrap;
 }
@@ -708,4 +711,145 @@ body,
   .note-canvas .milkdown .ProseMirror { padding-inline: 20px; }
   .source-canvas { padding-inline: 20px; }
   .app-header { padding-left: 12px; }
+}
+
+.context-error { position: fixed; bottom: 32px; right: 16px; z-index: 30; max-width: 420px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--destructive); font-size: 13px; }
+.context-error button { margin-left: 12px; color: var(--foreground); cursor: pointer; }
+
+/* Compact status bar: flat items with full-height hover targets. */
+.app-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: calc(22px + env(safe-area-inset-bottom));
+  min-height: 22px;
+  padding: 0 max(4px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(12px, env(safe-area-inset-left));
+  border-top: 1px solid color-mix(in oklch, var(--border) 30%, transparent);
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.footer-document, .footer-tools, .footer-save { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.footer-document { gap: 12px; }
+.footer-tools { height: 100%; gap: 0; justify-content: flex-end; }
+.app-footer svg { width: 12px; height: 12px; flex: none; stroke-width: 1.6; }
+.footer-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 21px;
+  min-height: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.footer-button:hover:not(:disabled) { background: var(--muted); color: var(--foreground); }
+.footer-format { color: inherit; }
+.footer-button:disabled { opacity: 0.4; cursor: default; }
+.footer-state { color: inherit; }
+.footer-error, .footer-error .footer-state { color: var(--destructive); }
+.footer-word-count { white-space: nowrap; }
+.error-line { display: flex; align-items: start; gap: 12px; }
+.error-line > span { flex: 1; overflow-wrap: anywhere; }
+.error-line button { background: transparent; color: inherit; font: inherit; border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+.is-spinning { animation: notes-spin 1.2s linear infinite; }
+@keyframes notes-spin { to { transform: rotate(360deg); } }
+
+.format-dialog {
+  width: min(900px, calc(100vw - 40px));
+  height: min(760px, calc(100dvh - 64px));
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 24px 90px #0005;
+  overflow: hidden;
+}
+.format-dialog[open] { display: flex; flex-direction: column; }
+.format-dialog::backdrop { background: #0007; backdrop-filter: blur(3px); }
+.format-dialog button { font: inherit; font-size: 12px; cursor: pointer; touch-action: manipulation; }
+.format-header { display: flex; flex: none; align-items: center; gap: 14px; padding: 22px 24px 18px; }
+.format-heading-icon { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border: 1px solid var(--border); border-radius: 10px; color: var(--primary); }
+.format-heading-icon svg { width: 19px; height: 19px; }
+.format-header h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.025em; text-wrap: balance; }
+.format-header p { margin: 5px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
+.format-close { display: grid; place-items: center; width: 30px; height: 30px; flex: none; margin-left: auto; border: 0; border-radius: 5px; background: transparent; color: var(--muted-foreground); }
+.format-close svg { width: 17px; height: 17px; }
+.format-close:hover { background: var(--muted); color: var(--foreground); }
+.format-toolbar { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 8px 24px; background: var(--card); border-block: 1px solid var(--border); }
+.format-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 11px; }
+.format-view-switch { display: flex; flex: none; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; }
+.format-view-switch button { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--muted-foreground); }
+.format-view-switch button[aria-pressed="true"] { background: var(--muted); color: var(--foreground); }
+.format-view-switch svg { width: 13px; height: 13px; }
+.format-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.format-body .note-canvas { padding-top: 0; }
+.format-body .note-canvas .milkdown .ProseMirror { padding: 32px 48px 48px; min-height: 0; outline: none; }
+.format-body .note-canvas .ProseMirror :is(h1, h2, h3, h4, h5, h6, strong, em, s, del, a)::before,
+.format-body .note-canvas .ProseMirror :is(strong, em, s, del, a)::after,
+.format-body .note-canvas .ProseMirror :not(pre) > code::before,
+.format-body .note-canvas .ProseMirror :not(pre) > code::after { content: none; }
+.format-body .markdown-syntax { display: none; }
+.format-body .milkdown-block-handle, .format-body .chart-actions, .format-body .chart-source, .format-body .milkdown-image-block .operation { display: none !important; }
+.format-source { margin: 0; padding: 28px 32px; font-family: var(--font-mono-stack, monospace); font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.format-empty { display: flex; min-height: 100%; padding: 32px; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.format-empty > svg { width: 28px; height: 28px; margin-bottom: 10px; color: var(--muted-foreground); }
+.format-empty h3 { margin: 8px 0; font-size: 16px; font-weight: 500; }
+.format-empty p { max-width: 430px; margin: 0 0 18px; color: var(--muted-foreground); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.format-actions { display: flex; flex: none; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border); padding: 16px 24px; }
+.format-actions p { flex: 1; margin: 0 16px 0 0; font-size: 11px; line-height: 1.6; color: var(--muted-foreground); }
+.format-actions p.footer-error { color: var(--destructive); }
+.format-actions button, .format-empty button { flex: none; border: 1px solid var(--border); border-radius: 6px; padding: 8px 14px; background: transparent; color: var(--foreground); }
+.format-actions button:hover:not(:disabled), .format-empty button:hover { background: var(--muted); }
+.format-dialog .format-primary { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+.format-dialog .format-primary:hover:not(:disabled) { background: color-mix(in oklch, var(--primary) 85%, var(--background)); }
+.format-dialog button:disabled { opacity: 0.4; cursor: default; }
+.format-error-actions { display: flex; gap: 8px; }
+:is(.footer-button, .format-dialog button, .error-line button, .settings-page button):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.footer-button:focus-visible { outline-offset: -2px; }
+.editor-context-menu { min-width: 220px; font-size: 12px; }
+.context-shortcut { margin-left: auto; color: var(--muted-foreground); font-size: 10px; }
+.context-hint { margin: 6px 8px 4px; color: var(--muted-foreground); font-size: 11px; }
+.visualize-figure { margin: 24px; }
+.visualize-figure img { display: block; width: 100%; height: auto; max-height: min(44dvh, 390px); object-fit: contain; background: white; border: 1px solid var(--border); border-radius: 6px; }
+.visualize-figure figcaption { padding: 0 4px 16px; font-size: 13px; line-height: 1.6; }
+.visualize-figure figcaption strong { display: block; font-weight: 500; margin-top: 8px; }
+.visualize-figure figcaption p { margin: 4px 0 0; color: var(--muted-foreground); }
+.visualize-kind { display: inline-block; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 10px; color: var(--muted-foreground); }
+.visualize-error { margin: 24px; padding: 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+.visualize-error h3 { margin-top: 0; font-size: 14px; }
+.visualize-error p { color: var(--destructive); white-space: pre-wrap; overflow-wrap: anywhere; }
+.visualize-error button { padding: 6px 10px; border: 1px solid var(--border); border-radius: 5px; color: var(--foreground); background: transparent; }
+@media (prefers-reduced-motion: reduce) { .is-spinning { animation: none; } .footer-button { transition: none; } }
+@media (max-width: 800px) {
+  .footer-document { gap: 10px; }
+  .app-footer { gap: 6px; padding-inline: 10px; }
+  .footer-tools { gap: 2px; }
+  .format-actions { flex-wrap: wrap; }
+  .format-actions p { flex-basis: 100%; margin: 0 0 4px; }
+}
+@media (max-width: 600px) {
+  .footer-word-count { display: none; }
+  .footer-button { padding-inline: 5px; font-size: 10px; }
+  .format-dialog { width: calc(100vw - 16px); height: calc(100dvh - 24px); }
+  .format-header { gap: 10px; padding: 16px; }
+  .format-toolbar, .format-actions { padding-inline: 16px; }
+  .format-heading-icon { display: none; }
+  .format-body .note-canvas .milkdown .ProseMirror { padding: 24px; }
 }

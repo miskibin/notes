@@ -136,6 +136,7 @@ function createMathView(display: boolean) {
     };
 
     rendered.addEventListener("mousedown", (event) => {
+      if (!view.editable) return;
       const mouse = event as MouseEvent;
       if (mouse.button !== 0 || mouse.shiftKey) return;
       event.preventDefault();
@@ -146,6 +147,7 @@ function createMathView(display: boolean) {
     });
     const editFence = (element: HTMLElement, atEnd: boolean) => {
       element.addEventListener("mousedown", (event) => {
+        if (!view.editable) return;
         if (event.button !== 0) return;
         event.preventDefault();
         const pos = getPos();
