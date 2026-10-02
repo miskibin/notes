@@ -49,8 +49,8 @@ import {
 
 type Screen = "notes" | "settings";
 type SaveState = "saved" | "saving" | "error";
-type VisualSession = { note: string; vault: string; selection: EditorSelection; editor: EditorHandle };
-const VisualizeDialog = lazy(() => import("./visualize/VisualizeDialog"));
+type VisualSession = { id: string; note: string; vault: string; selection: EditorSelection; editor: EditorHandle };
+const VisualizeRun = lazy(() => import("./visualize/VisualizeRun"));
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => readSettings());
@@ -73,6 +73,7 @@ export default function App() {
   const openingFormat = useRef(false);
   const transitionBusy = useRef(false);
   const [transitioning, setTransitioning] = useState(false);
+  const [visualBusy, setVisualBusy] = useState(false);
   const [visualSession, setVisualSession] = useState<VisualSession | null>(null);
   const [referenceDialog, setReferenceDialog] = useState<NoteReference | "new" | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -130,6 +131,7 @@ export default function App() {
     if (transitionBusy.current) return;
     transitionBusy.current = true;
     setTransitioning(true);
+    visualRef.current = null; setVisualSession(null); setVisualBusy(false);
     try { await operation(); setLoadError(null); }
     catch (error) { revealRef.current = ""; setLoadError(errorText(error)); }
     finally { transitionBusy.current = false; setTransitioning(false); }
@@ -474,16 +476,18 @@ export default function App() {
     if (!editor || !activeRef.current || formatSession || visualRef.current) return;
     try {
       validateIdea(selection.text);
-      const session = { note: activeRef.current, vault: settingsRef.current.vault, editor, selection };
+      const session = { id: crypto.randomUUID(), note: activeRef.current, vault: settingsRef.current.vault, editor, selection };
       visualRef.current = session;
       setVisualSession(session);
+      setVisualBusy(true);
     } catch (error) { setLoadError(errorText(error)); }
   };
   const closeVisualize = () => {
     visualRef.current = null;
     setVisualSession(null);
+    setVisualBusy(false);
   };
-  const insertChart = async (recipe: ChartRecipe, image: ChartImage): Promise<string | null> => {
+  const insertChart = async (recipe: ChartRecipe, image: ChartImage): Promise<{ asset: string } | string> => {
     const session = visualRef.current;
     const valid = () => session && visualRef.current === session && editorHandle.current === session.editor &&
       activeRef.current === session.note && settingsRef.current.vault === session.vault &&
@@ -493,9 +497,8 @@ export default function App() {
     const asset = await saveImage(session.vault, new File([bytes], "visualization.png", { type: "image/png" }));
     if (!valid()) return "The note changed. Visualize the current selection again.";
     session.editor.insertAfterSelection(chartMarkdown(recipe, asset), session.selection);
-    closeVisualize();
     setLoadError(null);
-    return null;
+    return { asset };
   };
 
   useEffect(() => {
@@ -649,8 +652,13 @@ export default function App() {
     let frame = 0;
     const reveal = () => {
       if (revealRef.current !== text) return;
-      if (!editorHandle.current || transitionBusy.current) { frame = window.requestAnimationFrame(reveal); return; }
-      editorHandle.current.revealText(text);
+      const handle = editorHandle.current;
+      const expected = sourceModeRef.current ? draftRef.current : noteBody(draftRef.current);
+      // Navigation can finish before the replacement editor is created.
+      if (!handle || transitionBusy.current || handle.getMarkdown() !== expected) {
+        frame = window.requestAnimationFrame(reveal); return;
+      }
+      handle.revealText(text);
       revealRef.current = "";
     };
     frame = window.requestAnimationFrame(reveal);
@@ -681,6 +689,11 @@ export default function App() {
       <main id="note-content" className="note-column" ref={columnRef}>
         <AppHeader title={headerTitle} screen={screen} sourceMode={sourceMode} onToggleSource={toggleSource} onNavigate={(next) => void navigate(next)}
           onReference={() => setReferenceDialog("new")} onHistory={openHistory} />
+        {visualSession ? <Suspense fallback={<div className="visualize-loading" role="status">Preparing chart…</div>}><VisualizeRun key={visualSession.id}
+          idea={visualSession.selection.text} host={settings.ollamaHost} model={settings.editModel}
+          onClose={closeVisualize} onInsert={insertChart}
+          onBusy={(busy) => { setVisualBusy(busy); visualRef.current = busy ? visualSession : null; }}
+          onSettings={() => { closeVisualize(); void navigate("settings"); }} /></Suspense> : null}
         <div className={`note-scroll${screen === "settings" ? " note-scroll-settings" : ""}`} ref={scrollRef}>
         {!ready ? <p className="empty">Opening notes…</p> : null}
         {loadError ? <div className="error-line" role="alert"><span>{loadError}</span><button type="button" onClick={() => setLoadError(null)}>Dismiss</button></div> : null}
@@ -734,17 +747,15 @@ export default function App() {
       </div>
       <AppFooter saveState={saveState} words={words} enabled={settings.autocomplete} model={settings.model}
         status={completionStatus} error={completionError} sourceMode={sourceMode} editing={ready && screen === "notes" && Boolean(active)}
-        formatting={formatSession !== null || visualSession !== null || transitioning} onToggle={() => persist({ ...settingsRef.current, autocomplete: !settingsRef.current.autocomplete })}
+        formatting={formatSession !== null || visualBusy || transitioning} onToggle={() => persist({ ...settingsRef.current, autocomplete: !settingsRef.current.autocomplete })}
         onFormat={() => void openFormat()} onRetrySave={() => void flush().catch((error: unknown) => setLoadError(errorText(error)))} />
       {formatSession ? <FormatDialog snapshot={formatSession} host={settings.ollamaHost} model={settings.editModel}
         onClose={() => setFormatSession(null)} onApply={applyFormat}
         onSettings={() => { setFormatSession(null); void navigate("settings"); }} /> : null}
-      {visualSession ? <Suspense fallback={null}><VisualizeDialog idea={visualSession.selection.text} host={settings.ollamaHost} model={settings.editModel}
-        onClose={closeVisualize} onInsert={insertChart} onSettings={() => { closeVisualize(); void navigate("settings"); }} /></Suspense> : null}
       {referenceDialog ? <ReferenceDialog initial={referenceDialog === "new" ? undefined : referenceDialog} onClose={() => setReferenceDialog(null)} onSave={saveReference} onRemove={removeReference} /> : null}
       {searchOpen ? <SearchDialog documents={searchDocuments} recent={recent} loading={searchLoading} onClose={() => setSearchOpen(false)}
         onOpen={(name, offset, query) => { revealRef.current = offset >= 0 ? query : ""; setSearchOpen(false); void openNote(name); }} /> : null}
-      {historyEntries ? <HistoryDialog entries={historyEntries} onClose={() => setHistoryEntries(null)} onRestore={restoreHistory} /> : null}
+      {historyEntries ? <HistoryDialog entries={historyEntries} vault={settings.vault} activeNote={active} currentBody={readDraft()} onClose={() => setHistoryEntries(null)} onRestore={restoreHistory} /> : null}
     </div>
   );
 }

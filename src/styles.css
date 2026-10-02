@@ -834,16 +834,7 @@ body,
 .editor-context-menu { min-width: 220px; font-size: 12px; }
 .context-shortcut { margin-left: auto; color: var(--muted-foreground); font-size: 10px; }
 .context-hint { margin: 6px 8px 4px; color: var(--muted-foreground); font-size: 11px; }
-.visualize-figure { margin: 24px; }
-.visualize-figure img { display: block; width: 100%; height: auto; max-height: min(44dvh, 390px); object-fit: contain; background: white; border: 1px solid var(--border); border-radius: 6px; }
-.visualize-figure figcaption { padding: 0 4px 16px; font-size: 13px; line-height: 1.6; }
-.visualize-figure figcaption strong { display: block; font-weight: 500; margin-top: 8px; }
-.visualize-figure figcaption p { margin: 4px 0 0; color: var(--muted-foreground); }
-.visualize-kind { display: inline-block; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 10px; color: var(--muted-foreground); }
-.visualize-error { margin: 24px; padding: 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
-.visualize-error h3 { margin-top: 0; font-size: 14px; }
-.visualize-error p { color: var(--destructive); white-space: pre-wrap; overflow-wrap: anywhere; }
-.visualize-error button { padding: 6px 10px; border: 1px solid var(--border); border-radius: 5px; color: var(--foreground); background: transparent; }
+
 @media (prefers-reduced-motion: reduce) { .is-spinning { animation: none; } .footer-button { transition: none; } }
 @media (max-width: 800px) {
   .footer-document { gap: 10px; }
@@ -899,19 +890,28 @@ body,
 .reference-actions { height: 0; position: relative; z-index: 5; padding-top: calc(var(--toolbar-height) + 14px); }
 .reference-actions button { opacity: .68; }
 
-.workspace-dialog { position: fixed; inset: 14vh auto auto 50%; transform: translateX(-50%); z-index: 100; width: min(560px, calc(100vw - 28px)); max-height: 70vh; margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--popover); color: var(--foreground); box-shadow: 0 18px 60px #0008; font-family: var(--font-sans-stack, "Segoe UI", sans-serif); }
-.workspace-dialog::backdrop { background: #0006; }
-.workspace-dialog header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-.workspace-dialog header button { border: 0; background: transparent; color: var(--muted-foreground); cursor: pointer; }
-.workspace-dialog header svg { width: 16px; }
-.reference-dialog form > label { display: grid; gap: 6px; margin: 15px 16px; font-size: 12px; }
-.reference-dialog label span, .reference-dialog form > p, .history-intro { color: var(--muted-foreground); font-weight: 400; }
-.reference-dialog input { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--foreground); font: inherit; outline: 0; }
+.workspace-dialog { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); z-index: 100; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--popover); color: var(--foreground); box-shadow: 0 12px 44px #0004; font: 13px/1.5 var(--font-sans-stack, "Segoe UI", sans-serif); }
+.workspace-dialog::backdrop { background: #0004; }
+.workspace-dialog header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 8px; }
+.workspace-dialog header strong { font-size: 13px; font-weight: 500; }
+.workspace-dialog header button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 4px; background: transparent; color: var(--muted-foreground); cursor: pointer; }
+.workspace-dialog header button:hover { background: var(--muted); color: var(--foreground); }
+.workspace-dialog header svg { width: 15px; height: 15px; }
+.workspace-dialog button:focus-visible, .visualize-run button:focus-visible, .visualize-run summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.reference-dialog { width: min(430px, calc(100vw - 32px)); overflow: auto; }
+.reference-dialog form > label { display: grid; gap: 7px; margin: 10px 20px; color: var(--muted-foreground); font-size: 11px; }
+.reference-dialog input { min-width: 0; width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--background); color: var(--foreground); font: inherit; font-size: 13px; outline: 0; }
+.reference-dialog input::placeholder { font-size: 12px; color: var(--muted-foreground); }
 .reference-dialog input:focus { border-color: var(--ring); }
-.reference-dialog form > p { margin: 0 16px; font-size: 11px; }
-.reference-dialog footer { display: flex; justify-content: flex-end; gap: 8px; padding: 16px; }
-.reference-dialog footer button, .history-list button { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--foreground); cursor: pointer; }
-.reference-dialog footer button[type=submit] { background: var(--foreground); color: var(--background); }
+.reference-preview { display: flex; align-items: center; gap: 7px; margin: 12px 20px; color: var(--muted-foreground); font-size: 12px; overflow: hidden; }
+.reference-preview svg { flex-shrink: 0; width: 14px; height: 14px; }
+.reference-preview span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reference-dialog form > p { margin: 10px 20px; font-size: 12px; }
+.reference-dialog footer { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 20px 18px; }
+.reference-dialog footer button, .history-actions button { padding: 6px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--muted-foreground); font: inherit; cursor: pointer; }
+.reference-dialog footer button:hover { background: var(--muted); color: var(--foreground); }
+.reference-dialog footer button[type=submit], .history-actions button { background: var(--foreground); color: var(--background); }
+.workspace-dialog button:disabled { opacity: .4; cursor: default; }
 .search-dialog { padding: 8px; }
 .search-box { display: flex; align-items: center; gap: 8px; padding: 3px 8px 9px; border-bottom: 1px solid var(--border); }
 .search-box svg { width: 17px; color: var(--muted-foreground); }
@@ -921,9 +921,57 @@ body,
 .search-results button { display: grid; gap: 4px; width: 100%; padding: 9px; border: 0; border-radius: 6px; background: transparent; color: var(--foreground); text-align: left; cursor: pointer; }
 .search-results button[data-selected=true] { background: var(--muted); }
 .search-results span, .search-results > p { overflow: hidden; color: var(--muted-foreground); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.history-intro { margin: 12px 16px; font-size: 12px; }
-.history-list { max-height: 52vh; overflow: auto; padding: 0 8px 10px; }
-.history-list > div { display: flex; align-items: center; gap: 10px; padding: 9px; border-bottom: 1px solid color-mix(in oklch, var(--border) 55%, transparent); }
-.history-list > div > svg { width: 16px; color: var(--muted-foreground); }
-.history-list > div > span { display: grid; flex: 1; gap: 3px; }
-.history-list small { color: var(--muted-foreground); }
+.history-dialog { width: min(760px, calc(100vw - 32px)); }
+.history-scope { display: flex; align-items: center; gap: 4px; padding: 8px 20px 14px; border-bottom: 1px solid var(--border); }
+.history-scope button { padding: 4px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--muted-foreground); font: inherit; font-size: 12px; cursor: pointer; }
+.history-scope button[aria-pressed=true] { background: var(--muted); color: var(--foreground); }
+.history-scope > span { margin-left: auto; color: var(--muted-foreground); font-size: 11px; }
+.history-content { display: grid; grid-template-columns: 210px minmax(0, 1fr); height: min(420px, 54dvh); }
+.history-list { overflow: auto; padding: 8px; border-right: 1px solid var(--border); }
+.history-list button { display: grid; gap: 3px; width: 100%; border: 0; border-radius: 4px; padding: 9px 10px; background: transparent; color: var(--foreground); text-align: left; font: inherit; cursor: pointer; }
+.history-list button:hover { background: color-mix(in oklch, var(--muted) 50%, transparent); }
+.history-list button[aria-pressed=true] { background: var(--muted); }
+.history-list strong { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-list time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.history-list small { color: var(--muted-foreground); font-size: 10px; }
+.history-list p, .history-preview > p { padding: 4px 12px; color: var(--muted-foreground); font-size: 12px; }
+.history-preview { min-width: 0; display: flex; flex-direction: column; padding: 16px 20px; overflow: auto; }
+.history-preview-heading { display: grid; gap: 4px; padding-bottom: 14px; }
+.history-preview-heading strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.history-preview-heading span { font-size: 11px; color: var(--muted-foreground); }
+.history-preview pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.8 var(--font-mono-stack, monospace); }
+.history-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--border); }
+.history-actions > span { color: var(--muted-foreground); font-size: 11px; }
+.visualize-run, .visualize-loading { flex-shrink: 0; margin: 4px 24px 0; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+.visualize-status-row { display: flex; align-items: center; gap: 12px; min-height: 24px; }
+.visualize-status-row [data-slot=generation-status], .visualize-outcome { min-width: 0; flex: 1; display: flex; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: 12px; }
+.visualize-outcome svg { width: 14px; height: 14px; }
+.visualize-model { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 11px; }
+.visualize-run button { display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px; border: 0; border-radius: 4px; background: transparent; color: var(--muted-foreground); font: inherit; cursor: pointer; }
+.visualize-run button:hover { background: var(--muted); color: var(--foreground); }
+.visualize-run button svg { width: 13px; height: 13px; }
+.visualize-run .visualize-dismiss { padding: 5px; }
+.visualize-problem { max-height: 70px; overflow: auto; margin: 6px 0; color: var(--destructive); white-space: pre-wrap; overflow-wrap: anywhere; }
+.visualize-trace > summary { width: fit-content; padding: 4px 0; color: var(--muted-foreground); cursor: pointer; font-size: 11px; }
+.visualize-trace > summary span { margin-left: 8px; opacity: .6; }
+.visualize-trace-body { max-height: min(300px, 34dvh); overflow: auto; padding-right: 8px; }
+.visualize-trace-toolbar { display: flex; align-items: center; justify-content: space-between; color: var(--muted-foreground); font-size: 11px; padding: 4px 0 8px; }
+.visualize-step { border-left: 1px solid var(--border); padding-left: 12px; margin: 0 0 10px 3px; }
+.visualize-step summary { cursor: pointer; color: var(--foreground); }
+.visualize-step small { display: block; margin: 3px 0 3px 14px; color: var(--muted-foreground); font-size: 10px; }
+.visualize-step[data-status=error] small { color: var(--destructive); }
+.trace-label { display: block; margin: 10px 0 4px; color: var(--muted-foreground); font-size: 10px; }
+.visualize-step pre { margin: 0; padding: 8px 10px; border-radius: 4px; background: var(--muted); color: var(--foreground); white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.7 var(--font-mono-stack, monospace); }
+@media (max-width: 620px) {
+  .history-content { grid-template-columns: 155px minmax(0, 1fr); }
+  .history-preview { padding: 12px; }
+  .history-actions > span { max-width: 160px; }
+  .visualize-run { margin-inline: 12px; }
+  .visualize-model { display: none; }
+}
+/* The title bar overlays the document; activity occupies its own row below it. */
+.visualize-run, .visualize-loading { margin-top: calc(var(--toolbar-height) + 4px); }
+.note-column:has(.visualize-run, .visualize-loading) .note-scroll { mask-image: none; scroll-padding-top: 20px; }
+.note-column:has(.visualize-run, .visualize-loading) .note-canvas,
+.note-column:has(.visualize-run, .visualize-loading) .source-canvas { padding-top: 0; }
+.note-column:has(.visualize-run, .visualize-loading) .reference-area { padding-top: 12px; }

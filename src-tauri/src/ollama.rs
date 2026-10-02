@@ -176,21 +176,32 @@ pub async fn visualize_selection(
     host: String,
     model: String,
     text: String,
+    previous_response: Option<String>,
+    repair_error: Option<String>,
 ) -> Result<String, String> {
     let host = normalize_host(&host)?;
     let model = normalize_model(&model)?;
     if text.trim().is_empty() || text.chars().count() > 12_000 {
         return Err("Select an idea between 1 and 12,000 characters.".into());
     }
+    let mut messages = vec![
+        serde_json::json!({ "role": "system", "content": include_str!("../../src/visualize/prompt.txt") }),
+        serde_json::json!({ "role": "user", "content": format!("Visualize this idea:\n\n{text}") }),
+    ];
+    match (previous_response, repair_error) {
+        (Some(previous), Some(error)) if previous.len() <= 128_000 && error.chars().count() <= 2200 => {
+            messages.push(serde_json::json!({ "role": "assistant", "content": previous }));
+            messages.push(serde_json::json!({ "role": "user", "content": format!("The chart failed validation or Python execution:\n{error}\n\nFix the error and return the complete chart JSON. Keep the original idea, data and assumptions. Follow the plotting restrictions.") }));
+        }
+        (None, None) => {}
+        _ => return Err("Invalid chart repair context.".into()),
+    }
     let response = client()?
         .post(format!("{host}/api/chat"))
         .timeout(Duration::from_secs(120))
         .json(&serde_json::json!({
             "model": model, "stream": false, "think": false, "format": "json", "keep_alive": "30m",
-            "messages": [
-                { "role": "system", "content": include_str!("../../src/visualize/prompt.txt") },
-                { "role": "user", "content": format!("Visualize this idea:\n\n{text}") }
-            ],
+            "messages": messages,
             "options": { "temperature": 0.2, "num_predict": 8192 }
         }))
         .send()
