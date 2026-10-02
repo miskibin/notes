@@ -23,6 +23,7 @@ export function WindowDialog({ name, labelledBy, describedBy, className, onClose
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }}>
     <div className={className}>{children}</div>
+    <div className="window-dialog-drag" data-tauri-drag-region aria-hidden />
     <WindowControls />
   </dialog>;
 }

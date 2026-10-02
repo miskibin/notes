@@ -48,6 +48,20 @@ async function checkControls() {
 }
 try {
   await page.goto(process.env.APP_URL || "http://127.0.0.1:1420"); await rich.waitFor();
+  // Tauri uses the actual hit target, not an ancestor's drag attribute.
+  const spacer = page.locator(".app-header-spacer");
+  const headerRect = await page.locator(".app-header").boundingBox();
+  const dragRect = await spacer.boundingBox();
+  assert.ok(dragRect && dragRect.height === headerRect.height && dragRect.width > 100);
+  for (const fraction of [0.1, 0.5, 0.9]) {
+    assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.hasAttribute("data-tauri-drag-region"),
+      { x: dragRect.x + dragRect.width / 2, y: dragRect.y + dragRect.height * fraction }), true);
+  }
+  assert.equal(await page.locator(".app-header-title span").evaluate(element => element.hasAttribute("data-tauri-drag-region")), true);
+  for (const button of await page.locator(".app-header button, .window-controls button").all()) {
+    assert.equal(await button.evaluate(element => { const r = element.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.hasAttribute("data-tauri-drag-region"); }), false);
+  }
+  console.log("PASS: full-height titlebar hit targets drag; action buttons do not");
   await checkControls();
   assert.equal(await page.evaluate(() => window.windowTest.calls.some(call => call.command.endsWith("set_effects"))), false);
   await page.evaluate(() => { window.windowTest.readSlow = true; });

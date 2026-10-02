@@ -66,13 +66,14 @@ body,
   align-items: center;
   min-width: 0;
   max-width: min(480px, 65%);
+  height: 100%;
   padding: 0 8px;
   color: var(--foreground);
   opacity: var(--document-title-opacity, 0);
   transform: translateY(calc((1 - var(--document-title-opacity, 0)) * 4px));
 }
 
-.app-header-page { padding-inline: 8px; color: var(--muted-foreground); }
+.app-header-page { display: flex; align-items: center; height: 100%; padding-inline: 8px; color: var(--muted-foreground); }
 
 .app-header-title span {
   overflow: hidden;
@@ -81,6 +82,7 @@ body,
 }
 
 .app-header-spacer {
+  align-self: stretch;
   flex: 1;
   min-width: 12px;
 }
@@ -1005,3 +1007,5 @@ html[data-frosted-glass=true] .app-header, html[data-frosted-glass=true] .window
 html[data-frosted-glass=true] .visualize-panel { background: color-mix(in oklch, var(--background) 88%, transparent); }
 
 .visualize-heading { margin: 0 0 16px; color: var(--foreground); font-size: 12px; font-weight: 500; }
+
+.window-dialog-drag { position: fixed; inset: 0 132px auto 0; height: var(--toolbar-height); }
