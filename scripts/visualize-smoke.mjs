@@ -19,7 +19,7 @@ await page.route("**/api/chat", async route => {
   submitted.push(route.request().postDataJSON()); calls++;
   if (mode === "delayed") await new Promise(resolve => setTimeout(resolve, 500));
   const next = mode === "invalid" || mode === "repair" && calls === 1 ? { ...recipe, code: "import os\nos.listdir('/')" } : mode === "slow" ? { ...recipe, code: "while True: pass" } : recipe;
-  await route.fulfill({ json: { message: { content: JSON.stringify(next) }, done_reason: "stop" } });
+  await route.fulfill({ json: { message: { content: JSON.stringify(next) }, done: true, done_reason: "stop" } });
 });
 const sourceButton = page.getByRole("button", { name: "Markdown source", exact: true });
 const source = page.locator(".cm-content");
@@ -81,7 +81,7 @@ try {
   assert.ok(image.width > 500 && image.height > 300);
   await page.screenshot({ path: resolve(artifacts, "inserted.png") });
   assert.match(await editor.innerText(), /Changed during generation/);
-  await editor.click(); await page.keyboard.press("Control+z");
+  await editor.locator("p").first().click(); await page.keyboard.press("Control+z");
   await page.waitForFunction(() => !document.querySelector(".note-scroll .ProseMirror img")); await dismiss();
   assert.deepEqual(errors, []); assert.ok(outbound.every(url => url.startsWith("http://127.0.0.1:11434/")), outbound.join("\n"));
   await writeFile(resolve(artifacts, "checks.json"), JSON.stringify({ passed: true, errors, image, checks: ["no modal", "automatic PNG insertion", "source/rich undo", "inspectable trace", "Python error repair", "three-attempt budget", "running cancellation", "stale-selection rejection", "no runtime CDN"] }, null, 2));

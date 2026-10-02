@@ -6,7 +6,10 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-const ContextMenu = ContextMenuPrimitive.Root
+function ContextMenu(props: React.ComponentProps<typeof ContextMenuPrimitive.Root>) {
+  // Menus must not install a body-wide pointer-events lock over window controls.
+  return <ContextMenuPrimitive.Root modal={false} {...props} />
+}
 const ContextMenuTrigger = ContextMenuPrimitive.Trigger
 const ContextMenuGroup = ContextMenuPrimitive.Group
 const ContextMenuPortal = ContextMenuPrimitive.Portal

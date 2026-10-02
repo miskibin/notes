@@ -1,5 +1,4 @@
-import { ArrowLeft, CodeXml, History, Link2, Minus, Square, X } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ArrowLeft, CodeXml, History, Link2 } from "lucide-react";
 import { isTauri } from "./vault-api";
 
 export function AppHeader({
@@ -20,7 +19,7 @@ export function AppHeader({
   onHistory: () => void;
 }) {
   return (
-    <header className="app-header" data-tauri-drag-region>
+    <header className="app-header">
       {screen === "settings" ? (
         <button type="button" className="app-header-mode" aria-label="Back to notes" title="Back to notes" onClick={() => onNavigate("notes")}>
           <ArrowLeft aria-hidden />
@@ -42,24 +41,7 @@ export function AppHeader({
         </button>
         </>
       ) : null}
-      {isTauri() ? <WindowControls /> : null}
+      {isTauri() ? <div className="window-controls-slot" aria-hidden /> : null}
     </header>
-  );
-}
-
-function WindowControls() {
-  const appWindow = getCurrentWindow();
-  return (
-    <div className="app-header-windows">
-      <button type="button" aria-label="Minimize" onClick={() => void appWindow.minimize()}>
-        <Minus aria-hidden />
-      </button>
-      <button type="button" aria-label="Maximize" onClick={() => void appWindow.toggleMaximize()}>
-        <Square aria-hidden />
-      </button>
-      <button type="button" className="close" aria-label="Close" onClick={() => void appWindow.close()}>
-        <X aria-hidden />
-      </button>
-    </div>
   );
 }

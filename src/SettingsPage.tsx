@@ -38,6 +38,7 @@ const NAV: { id: Section; label: string; icon: typeof StickyNote }[] = [
 
 export function SettingsPage({
   settings,
+  glassStatus,
   models,
   modelError,
   onChange,
@@ -46,6 +47,7 @@ export function SettingsPage({
   onBack,
 }: {
   settings: Settings;
+  glassStatus?: string | null;
   models: string[];
   modelError: string | null;
   onChange: (settings: Settings) => void;
@@ -102,7 +104,7 @@ export function SettingsPage({
             <NotesSection settings={settings} models={models} modelError={modelError} onChange={patch} onHostBlur={onHostBlur} />
           ) : null}
           {section === "appearance" ? (
-            <AppearanceSection appearance={settings} onChange={(next) => patch(next)} onReset={() => patch(DEFAULT_APPEARANCE)} />
+            <AppearanceSection glassStatus={glassStatus} appearance={settings} onChange={(next) => patch(next)} onReset={() => patch(DEFAULT_APPEARANCE)} />
           ) : null}
           {section === "files" ? <FilesSection vault={settings.vault} onPickFolder={onPickFolder} /> : null}
         </div>
@@ -161,7 +163,7 @@ function NotesSection({
         </PrefRow>
       </PrefSection>
       <PrefSection title="Edit & formatting" description="Ctrl+E rewrites selected text. Format in the footer organizes the whole note; Visualize in the context menu creates a chart.">
-        <PrefRow htmlFor="edit-model" title="Edit model" description="Used by editing, Markdown formatting and Visualize. Preview generated results before inserting them; Ctrl+Z undoes the change.">
+        <PrefRow htmlFor="edit-model" title="Edit model" description="Used by editing, Markdown formatting and Visualize. Formatting has a preview; Visualize inserts a PNG into the note. Ctrl+Z undoes the change.">
           <ModelControl
             id="edit-model"
             models={models}
@@ -176,10 +178,12 @@ function NotesSection({
 
 function AppearanceSection({
   appearance,
+  glassStatus,
   onChange,
   onReset,
 }: {
   appearance: Appearance;
+  glassStatus?: string | null;
   onChange: (next: Partial<Appearance>) => void;
   onReset: () => void;
 }) {
@@ -298,6 +302,13 @@ function AppearanceSection({
             options={UI_RADII}
           />
         </PrefRow>
+      </PrefSection>
+
+      <PrefSection title="Experimental" description="Off by default.">
+        <PrefRow htmlFor="frosted-glass" title="Frosted glass" description="Translucent, blurred surfaces in the Windows desktop app.">
+          <Switch id="frosted-glass" checked={appearance.frostedGlass} onChange={frostedGlass => onChange({ frostedGlass })} />
+        </PrefRow>
+        {glassStatus ? <p className="text-xs text-muted-foreground" role="status">{glassStatus}</p> : null}
       </PrefSection>
 
       <PrefSection title="Motion" description="In addition to the operating system setting.">

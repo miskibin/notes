@@ -14,6 +14,7 @@ export default function VisualizeRun({ idea, host, model, onClose, onInsert, onS
   const [state, setState] = useState<"running" | "done" | "error" | "cancelled">("running");
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [now, setNow] = useState(Date.now);
   const [copyStatus, setCopyStatus] = useState("");
   const controller = useRef<AbortController | null>(null);
   const callbacks = useRef({ onInsert, onBusy });
@@ -47,19 +48,25 @@ export default function VisualizeRun({ idea, host, model, onClose, onInsert, onS
           if (abort.signal.aborted) return;
           setError(cause instanceof Error ? cause.message : String(cause)); setState("error");
           setUpdate(current => ({ status: "Chart failed", steps: current.steps.map(step => step.status === "running" ?
-            { ...step, status: "error", elapsed: Date.now() - step.started, output: cause instanceof Error ? cause.message : String(cause) } : step) }));
+            { ...step, status: "error", elapsed: Date.now() - step.started, error: cause instanceof Error ? cause.message : String(cause) } : step) }));
         } finally { if (!abort.signal.aborted) callbacks.current.onBusy(false); }
       })();
     }, 0);
     return () => { window.clearTimeout(timer); abort.abort(); };
   }, [idea, host, model, attempt]);
+  useEffect(() => {
+    if (state !== "running") return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [state]);
   const cancel = () => {
     controller.current?.abort(); setState("cancelled"); callbacks.current.onBusy(false);
     setUpdate(current => ({ status: "Cancelled", steps: current.steps.map(step => step.status === "running" ?
-      { ...step, status: "error", output: "Cancelled", elapsed: Date.now() - step.started } : step) }));
+      { ...step, status: "error", error: "Cancelled", elapsed: Date.now() - step.started } : step) }));
   };
   const busy = state === "running";
   return <section className="visualize-run" aria-label="Visualization activity" aria-busy={busy}>
+    <p className="visualize-heading">Visualize</p>
     <div className="visualize-status-row">
       {busy ? <GenerationStatus active label={update.status} /> : <span className="visualize-outcome" role="status">{state === "done" ? <Check aria-hidden /> : null}{update.status}</span>}
       <span className="visualize-model" title={model}>{model || "No model"}</span>
@@ -74,9 +81,10 @@ export default function VisualizeRun({ idea, host, model, onClose, onInsert, onS
           void navigator.clipboard.writeText(JSON.stringify({ model, idea, state, ...update }, null, 2)).then(() => setCopyStatus("Copied")).catch(() => setCopyStatus("Copy failed"));
         }}><Copy aria-hidden />{copyStatus || "Copy log"}</button></div>
         {update.steps.map(step => <details key={step.id} className="visualize-step" data-status={step.status}>
-          <summary><span>{step.name}</span><small>Attempt {step.attempt} · {step.status}{step.elapsed != null ? ` · ${(step.elapsed / 1000).toFixed(1)}s` : ""}</small></summary>
+          <summary><span>{step.name}</span><small>Attempt {step.attempt} · {step.status}{` · ${((step.elapsed ?? Math.max(0, now - step.started)) / 1000).toFixed(1)}s`}</small></summary>
           <div><span className="trace-label">Input</span><pre tabIndex={0}>{step.input}</pre>
-            {step.output != null ? <><span className="trace-label">Output</span><pre tabIndex={0}>{step.output}</pre></> : null}</div>
+            {step.output != null ? <><span className="trace-label">Output</span><pre tabIndex={0}>{step.output}</pre></> : null}
+            {step.error ? <><span className="trace-label">Error</span><pre tabIndex={0}>{step.error}</pre></> : null}</div>
         </details>)}
       </div>
     </details>

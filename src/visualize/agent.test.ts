@@ -38,6 +38,14 @@ describe("bounded chart agent", () => {
     await expect(runChartAgent(s.options, s)).rejects.toThrow("after 3 attempts");
     expect(s.request).toHaveBeenCalledTimes(3); expect(s.render).toHaveBeenCalledTimes(3);
   });
+  it("retains partial output when the connection fails", async () => {
+    const s = setup();
+    s.request.mockImplementation(async (...args) => { args[5]("partial Python"); throw new Error("Disconnected"); });
+    await expect(runChartAgent(s.options, s)).rejects.toThrow("Disconnected");
+    const step = s.updates[s.updates.length - 1].steps[0];
+    expect(step.output).toBe("partial Python"); expect(step.error).toBe("Disconnected");
+    expect(s.render).not.toHaveBeenCalled();
+  });
   it("does not blindly retry connection failures", async () => {
     const s = setup(); s.request.mockRejectedValue(new Error("Ollama offline"));
     await expect(runChartAgent(s.options, s)).rejects.toThrow("offline");
