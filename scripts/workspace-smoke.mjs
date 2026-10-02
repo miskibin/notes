@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
 const page = await browser.newPage({ viewport: { width: 1100, height: 760 } });
 const errors = [];
 page.on("pageerror", error => errors.push(error.message));
@@ -66,7 +66,8 @@ try {
   await page.keyboard.press("Control+a");
   await page.keyboard.insertText(targetSource.replace("# Beta", "# Renamed Beta"));
   await saved(); await row("Alpha").click();
-  await mode.click(); await rich.waitFor();
+  await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("# Alpha"));
+  await mode.click(); await rich.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
   await page.locator(".reference-chip").filter({ hasText: "Beta" }).click();
   await rich.getByRole("heading", { name: "Renamed Beta", exact: true }).waitFor();
   console.log("PASS: wiki references resolve unopened notes, retain ids after rename, and show backlinks");
@@ -95,11 +96,14 @@ try {
   await page.keyboard.press("Control+Shift+l");
   const reference = page.getByRole("dialog", { name: "Add reference", exact: true });
   await reference.waitFor();
+  assert.equal(await reference.getByRole("textbox").count(), 1);
   assert.equal(await reference.evaluate(el => el.matches(":modal")), true);
   await reference.getByLabel("URL", { exact: true }).fill("javascript:alert(1)");
   await reference.getByRole("button", { name: "Save reference", exact: true }).click();
   await reference.getByRole("alert").waitFor();
   await reference.getByLabel("URL", { exact: true }).fill("https://jira.corp/browse/OPS-42");
+  await reference.locator(".reference-preview").getByText("OPS-42", { exact: true }).waitFor();
+  await page.screenshot({ path: resolve(artifacts, "reference.png") });
   await reference.getByRole("button", { name: "Save reference", exact: true }).click();
   await reference.waitFor({ state: "hidden" });
   const chip = page.locator(".reference-chip").filter({ hasText: "OPS-42" });
@@ -132,7 +136,11 @@ try {
   await page.getByRole("button", { name: "History and recovery", exact: true }).click();
   const history = page.getByRole("dialog", { name: "History and recovery", exact: true });
   await history.waitFor();
-  await history.locator(".history-list > div").filter({ hasText: "a" }).first().getByRole("button", { name: "Restore", exact: true }).click();
+  assert.equal(await history.getByRole("button", { name: "This note", exact: true }).getAttribute("aria-pressed"), "true");
+  await history.locator(".history-preview pre").waitFor();
+  assert.doesNotMatch(await history.locator(".history-preview pre").innerText(), /# Keep this comment/);
+  await page.screenshot({ path: resolve(artifacts, "history.png") });
+  await history.getByRole("button", { name: "Restore version", exact: true }).click();
   await history.waitFor({ state: "hidden" });
   await rich.waitFor();
   const restored = await page.evaluate(() => window.workspaceTest.files.get("Vault A").get("a.md"));
@@ -146,7 +154,10 @@ try {
   await page.evaluate(() => window.workspaceTest.files.get("Vault A").set("b.md", "---\nnotes:\n  id: another-note-id\n  references: []\n---\n# Replacement\n\nKeep this content"));
   await page.getByRole("button", { name: "History and recovery", exact: true }).click();
   await history.waitFor();
-  await history.locator(".history-list > div").filter({ hasText: "Deleted note" }).filter({ hasText: "b" }).first().getByRole("button", { name: "Restore", exact: true }).click();
+  await history.getByRole("button", { name: "All notes", exact: true }).click();
+  await history.locator(".history-list button").filter({ hasText: "Deleted" }).filter({ hasText: "b" }).first().click();
+  await history.locator(".history-preview pre").waitFor();
+  await history.getByRole("button", { name: "Restore version", exact: true }).click();
   await history.waitFor({ state: "hidden" });
   assert.match(await page.evaluate(() => window.workspaceTest.files.get("Vault A").get("b.md")), /Keep this content/);
   assert.ok(await page.evaluate(() => window.workspaceTest.files.get("Vault A").has("b-restored.md")));

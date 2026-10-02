@@ -203,21 +203,45 @@ export async function formatNote(host: string, model: string, text: string, sign
   return cleanFormattedNote(body.message?.content ?? "");
 }
 
-export async function visualizeIdea(host: string, model: string, text: string, signal: AbortSignal): Promise<ChartRecipe> {
+export type ChartRepair = { previousResponse: string; error: string };
+
+export function chartRequest(model: string, text: string, repair?: ChartRepair) {
+  const messages = [{ role: "system", content: visualizePrompt }, { role: "user", content: `Visualize this idea:\n\n${text}` }];
+  if (repair) messages.push(
+    { role: "assistant", content: repair.previousResponse },
+    { role: "user", content: `The chart failed validation or Python execution:\n${repair.error}\n\nFix the error and return the complete chart JSON. Keep the original idea, data and assumptions. Follow the plotting restrictions.` },
+  );
+  return { model, stream: false, think: false, format: "json", keep_alive: "30m", messages,
+    options: { temperature: 0.2, num_predict: 8192 } };
+}
+
+export async function requestChart(host: string, model: string, text: string, signal: AbortSignal, repair?: ChartRepair): Promise<string> {
   validateIdea(text);
   if (!model.trim()) throw new Error("Choose an edit model in Settings to visualize ideas.");
-  if (isTauri()) return parseRecipe(await invoke<string>("visualize_selection", { host, model, text }));
+  signal.throwIfAborted();
+  if (isTauri()) {
+    // The native request has a 120s deadline; cancellation discards its result.
+    const raw = await invoke<string>("visualize_selection", { host, model, text,
+      previousResponse: repair?.previousResponse ?? null, repairError: repair?.error ?? null });
+    signal.throwIfAborted();
+    return raw;
+  }
   const response = await fetch(`${host.trim().replace(/\/+$/, "")}/api/chat`, {
     method: "POST", headers: { "content-type": "application/json" },
     signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
-    body: JSON.stringify({ model, stream: false, think: false, format: "json", keep_alive: "30m",
-      messages: [{ role: "system", content: visualizePrompt }, { role: "user", content: `Visualize this idea:\n\n${text}` }],
-      options: { temperature: 0.2, num_predict: 8192 } }),
+    body: JSON.stringify(chartRequest(model, text, repair)),
   });
   const body = await response.json() as { message?: { content?: string }; error?: string; done_reason?: string };
   if (!response.ok || body.error) throw new Error(body.error || "Ollama request failed. Check the edit model in Settings.");
   if (body.done_reason === "length") throw new Error("The model stopped before finishing the chart. Try a shorter idea.");
-  return parseRecipe(body.message?.content ?? "");
+  signal.throwIfAborted();
+  const raw = body.message?.content ?? "";
+  if (raw.length > 128_000) throw new Error("The model returned an oversized chart.");
+  return raw;
+}
+
+export async function visualizeIdea(host: string, model: string, text: string, signal: AbortSignal): Promise<ChartRecipe> {
+  return parseRecipe(await requestChart(host, model, text, signal));
 }
 
 function extensionOf(file: File): string {
