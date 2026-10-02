@@ -157,6 +157,9 @@ export function SidebarResizeRail({
     frame: number | null
     moved: boolean
     target: HTMLElement
+    cursor: string
+    userSelect: string
+    transitionDuration: string
   } | null>(null)
   const suppressClickRef = useRef(false)
 
@@ -254,9 +257,9 @@ export function SidebarResizeRail({
     if (!drag) return
     dragRef.current = null
     if (drag.frame !== null) cancelAnimationFrame(drag.frame)
-    drag.target.style.removeProperty("transition-duration")
-    document.body.style.removeProperty("cursor")
-    document.body.style.removeProperty("user-select")
+    drag.target.style.transitionDuration = drag.transitionDuration
+    document.body.style.cursor = drag.cursor
+    document.body.style.userSelect = drag.userSelect
     if (railRef.current?.hasPointerCapture(drag.pointerId)) {
       railRef.current.releasePointerCapture(drag.pointerId)
     }
@@ -265,11 +268,26 @@ export function SidebarResizeRail({
     if (drag.moved) optionsRef.current.onWidthChange?.(drag.width)
   }, [])
 
-  useEffect(() => endDrag, [endDrag])
+  useEffect(() => {
+    const onVisibility = () => { if (document.hidden) endDrag() }
+    const onEscape = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") endDrag() }
+    window.addEventListener("blur", endDrag)
+    window.addEventListener("pagehide", endDrag)
+    document.addEventListener("visibilitychange", onVisibility)
+    window.addEventListener("keydown", onEscape)
+    return () => {
+      endDrag()
+      window.removeEventListener("blur", endDrag)
+      window.removeEventListener("pagehide", endDrag)
+      document.removeEventListener("visibilitychange", onVisibility)
+      window.removeEventListener("keydown", onEscape)
+    }
+  }, [endDrag])
+  useEffect(() => { if (disabled) endDrag() }, [disabled, endDrag])
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (optionsRef.current.disabled || event.button !== 0) return
+      if (optionsRef.current.disabled || event.button !== 0 || !event.isPrimary || dragRef.current) return
       const target = resolveTarget()
       if (!target) return
       const startWidth = clampSidebarWidth(
@@ -279,6 +297,7 @@ export function SidebarResizeRail({
       event.preventDefault()
       event.stopPropagation()
       // An animated width would trail the pointer by a whole easing curve.
+      const transitionDuration = target.style.transitionDuration
       target.style.setProperty("transition-duration", "0ms")
       dragRef.current = {
         pointerId: event.pointerId,
@@ -289,14 +308,18 @@ export function SidebarResizeRail({
         frame: null,
         moved: false,
         target,
+        cursor: document.body.style.cursor,
+        userSelect: document.body.style.userSelect,
+        transitionDuration,
       }
       applyWidth(target, startWidth)
-      event.currentTarget.setPointerCapture(event.pointerId)
+      try { event.currentTarget.setPointerCapture(event.pointerId) }
+      catch { endDrag(); return }
       event.currentTarget.setAttribute("data-resizing", "true")
       document.body.style.cursor = "col-resize"
       document.body.style.userSelect = "none"
     },
-    [applyWidth, bounds, resolveTarget]
+    [applyWidth, bounds, endDrag, resolveTarget]
   )
 
   const onPointerMove = useCallback(
@@ -392,6 +415,7 @@ export function SidebarResizeRail({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onLostPointerCapture={endDrag}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}

@@ -1,24 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileText, GitPullRequest, Link2, MessageSquare, Pencil, Search, Ticket, X } from "lucide-react";
 import { classifyReference, noteBody, referenceLabel, referenceUrl, type NoteMetadata, type NoteReference } from "./note-metadata";
+import { WindowDialog } from "./WindowDialog";
 import { titleFrom } from "./notes";
 import { searchNotes, type SearchDocument } from "./note-search";
 import { readHistory, type HistoryEntry } from "./vault-api";
 
-function WorkspaceDialog({ name, className, onClose, children }: {
-  name: string; className: string; onClose: () => void; children: ReactNode;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const element = dialog.current;
-    if (!element) return;
-    const previous = document.activeElement;
-    element.showModal();
-    return () => { element.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
-  }, []);
-  return <dialog ref={dialog} aria-label={name} className={`workspace-dialog ${className}`}
-    onCancel={event => { event.preventDefault(); onClose(); }}>{children}</dialog>;
-}
+const WorkspaceDialog = WindowDialog;
 
 export function ReferenceBar({ metadata, onAdd, onEdit, onOpen, backlinks, onOpenNote }: {
   metadata: NoteMetadata; onAdd: () => void; onEdit: (reference: NoteReference) => void;
@@ -56,7 +44,7 @@ export function ReferenceDialog({ initial, onClose, onSave, onRemove }: { initia
     catch { return null; }
   }, [input, initial]);
   const [error, setError] = useState<string | null>(null);
-  return <WorkspaceDialog name={initial ? "Edit reference" : "Add reference"} className="reference-dialog" onClose={onClose}>
+  return <WorkspaceDialog name={initial ? "Edit reference" : "Add reference"} className="workspace-dialog reference-dialog" onClose={onClose}>
     <form onSubmit={(event) => { event.preventDefault(); if (input.trim()) setError(onSave(input.trim(), initial?.url === input.trim() ? initial.label : "")); }}>
       <header><strong>{initial ? "Edit reference" : "Add reference"}</strong><button type="button" onClick={onClose} aria-label="Close"><X /></button></header>
       <label>URL<input autoFocus value={input} onChange={(event) => { setInput(event.target.value); setError(null); }} placeholder="Paste a Gerrit, Jira, GitHub, Teams or web URL" /></label>
@@ -73,7 +61,7 @@ export function SearchDialog({ documents, recent, loading, onClose, onOpen }: {
   const [query, setQuery] = useState(""); const [selected, setSelected] = useState(0); const input = useRef<HTMLInputElement>(null);
   const results = useMemo(() => query ? searchNotes(documents, query) : recent.flatMap((name) => documents.filter((item) => item.name === name).map((item) => ({ ...item, snippet: "Recently opened", offset: -1, score: 0 }))), [documents, query, recent]);
   useEffect(() => setSelected(0), [query]);
-  return <WorkspaceDialog name="Search notes" className="search-dialog" onClose={onClose}>
+  return <WorkspaceDialog name="Search notes" className="workspace-dialog search-dialog" onClose={onClose}>
     <div className="search-box"><Search /><input ref={input} autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search titles, notes and references…"
       onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); setSelected((v) => Math.max(0, Math.min(results.length - 1, v + 1))); } if (event.key === "ArrowUp") { event.preventDefault(); setSelected((v) => Math.max(0, v - 1)); } if (event.key === "Enter" && results[Math.min(selected, results.length - 1)]) { const result = results[Math.min(selected, results.length - 1)]; onOpen(result.name, result.offset, query); } }} /></div>
     <p className="dialog-section-label">{query ? "Results" : "Recently opened"}</p>
@@ -106,7 +94,7 @@ export function HistoryDialog({ entries, vault, activeNote, currentBody, onClose
   const words = body?.trim().split(/\s+/).filter(Boolean).length ?? 0;
   const currentWords = noteBody(currentBody).trim().split(/\s+/).filter(Boolean).length;
   const delta = words - currentWords;
-  return <WorkspaceDialog name="History and recovery" className="history-dialog" onClose={onClose}>
+  return <WorkspaceDialog name="History and recovery" className="workspace-dialog history-dialog" onClose={onClose}>
     <header><strong>History</strong><button type="button" onClick={onClose} aria-label="Close"><X /></button></header>
     <div className="history-scope" role="group" aria-label="History scope">
       {activeNote ? <button type="button" aria-pressed={scope === "note"} onClick={() => { setScope("note"); setSelectedId(null); }}>This note</button> : null}

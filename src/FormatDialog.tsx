@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CodeXml, Eye, LoaderCircle, WandSparkles, X } from "lucide-react";
+import { WindowDialog } from "./WindowDialog";
 import { NoteCanvas } from "./editor/NoteCanvas";
 import type { CompleteBridge } from "./editor/autocomplete";
 import type { EditorHandle } from "./editor/editor-handle";
@@ -20,24 +21,12 @@ export function FormatDialog({ snapshot, host, model, onClose, onApply, onSettin
   onApply: (formatted: string) => string | null;
   onSettings: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const previewHandle = useRef<EditorHandle | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(Boolean(model.trim()));
   const [attempt, setAttempt] = useState(0);
   const [source, setSource] = useState(false);
-
-  useEffect(() => {
-    const element = dialog.current;
-    if (!element) return;
-    const previous = document.activeElement;
-    element.showModal();
-    return () => {
-      element.close();
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-    };
-  }, []);
 
   useEffect(() => {
     if (!model.trim()) return;
@@ -61,19 +50,7 @@ export function FormatDialog({ snapshot, host, model, onClose, onApply, onSettin
 
   const unchanged = result === snapshot.original.trim();
   return (
-    <dialog className="format-dialog" ref={dialog} aria-labelledby="format-title" aria-describedby="format-description"
-      onCancel={(event) => { event.preventDefault(); onClose(); }}
-      onKeyDown={(event) => {
-        if (event.key !== "Tab") return;
-        const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-        )).filter((element) => element.getClientRects().length > 0);
-        const first = controls[0];
-        const last = controls[controls.length - 1];
-        if (!first || !last) return;
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-      }}>
+    <WindowDialog className="format-dialog" labelledBy="format-title" describedBy="format-description" onClose={onClose}>
       <header className="format-header">
         <div className="format-heading-icon"><WandSparkles aria-hidden="true" /></div>
         <div>
@@ -113,6 +90,6 @@ export function FormatDialog({ snapshot, host, model, onClose, onApply, onSettin
           if (problem) setError(problem);
         }}>Apply formatting</button>
       </footer>
-    </dialog>
+    </WindowDialog>
   );
 }

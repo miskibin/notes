@@ -85,6 +85,7 @@ export type Appearance = {
   radius: UiRadius;
   contentWidth: ContentWidth;
   reduceMotion: boolean;
+  frostedGlass: boolean;
   textZoom: number;
 };
 
@@ -99,6 +100,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
   radius: "default",
   contentWidth: "comfortable",
   reduceMotion: false,
+  frostedGlass: false,
   textZoom: 1,
 };
 
@@ -433,6 +435,7 @@ export function normalizeAppearance(value: Partial<Appearance> | null | undefine
     radius: oneOf(value?.radius, RADIUS_IDS, DEFAULT_APPEARANCE.radius),
     contentWidth: oneOf(value?.contentWidth, WIDTH_IDS, DEFAULT_APPEARANCE.contentWidth),
     reduceMotion: value?.reduceMotion === true,
+    frostedGlass: value?.frostedGlass === true,
     textZoom: clampTextZoom(value?.textZoom),
   };
 }

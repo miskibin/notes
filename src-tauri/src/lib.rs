@@ -6,6 +6,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(ollama::ChartRequests::default())
         .invoke_handler(tauri::generate_handler![
             vault::default_vault_dir,
             vault::list_notes,
@@ -21,6 +22,7 @@ pub fn run() {
             ollama::edit_selection,
             ollama::format_note,
             ollama::visualize_selection,
+            ollama::cancel_visualize,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

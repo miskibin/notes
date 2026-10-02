@@ -4,7 +4,7 @@ import { parseRecipe, validateIdea, type ChartRecipe } from "./recipe";
 
 export type TraceStep = {
   id: number; attempt: number; name: string; status: "running" | "done" | "error";
-  started: number; elapsed?: number; input: string; output?: string;
+  started: number; elapsed?: number; input: string; output?: string; error?: string;
 };
 export type AgentUpdate = { status: string; steps: TraceStep[] };
 type Dependencies = { request: typeof requestChart; render: typeof renderPythonChart };
@@ -24,15 +24,20 @@ export async function runChartAgent({ host, model, idea, signal, onUpdate }: {
     steps.push(step); emit(name); return step;
   };
   const finish = (step: TraceStep, output: string, status: "done" | "error" = "done") => {
-    step.output = output; step.status = status; step.elapsed = Date.now() - step.started; emit(step.name);
+    if (status === "error") step.error = output; else step.output = output;
+    step.status = status; step.elapsed = Date.now() - step.started; emit(step.name);
   };
   for (let attempt = 1; attempt <= MAX_CHART_ATTEMPTS; attempt++) {
     signal.throwIfAborted();
     const modelStep = start(attempt, repair ? `Repairing chart · ${attempt}/${MAX_CHART_ATTEMPTS}` : "Generating Python",
       JSON.stringify({ endpoint: `${host.trim().replace(/\/+$/, "")}/api/chat`, ...chartRequest(model, idea, repair) }, null, 2));
+    if (!repair) emit("Waiting for Ollama response");
     let raw: string;
     try {
-      raw = await dependencies.request(host, model, idea, signal, repair);
+      raw = await dependencies.request(host, model, idea, signal, repair, content => {
+        if (signal.aborted || modelStep.status !== "running") return;
+        modelStep.output = content; emit(`Generating Python · ${content.length.toLocaleString()} characters`);
+      });
       signal.throwIfAborted();
       finish(modelStep, raw);
     } catch (error) {

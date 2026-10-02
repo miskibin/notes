@@ -1,4 +1,6 @@
-use std::time::Duration;
+use std::{collections::HashMap, sync::Mutex, time::{Duration, Instant}};
+use tauri::{ipc::Channel, State};
+use tokio::sync::oneshot;
 
 use serde::{Deserialize, Serialize};
 
@@ -53,13 +55,16 @@ fn normalize_model(model: &str) -> Result<String, String> {
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent("notes-app")
+        .connect_timeout(Duration::from_secs(5))
         .build()
         .map_err(|err| format!("HTTP client failed: {err}"))
 }
 
 fn map_err(err: reqwest::Error) -> String {
-    if err.is_connect() || err.is_timeout() {
-        "Ollama is not running at that address.".into()
+    if err.is_timeout() {
+        "Ollama request timed out. The server may still be running; check the model and try again.".into()
+    } else if err.is_connect() {
+        "Cannot connect to Ollama at the configured address. Check the address in Settings.".into()
     } else {
         format!("Ollama request failed: {err}")
     }
@@ -171,13 +176,57 @@ fn format_budget(text: &str) -> Result<u32, String> {
     Ok((chars as u32 + 512).clamp(1024, 16_384))
 }
 
+// Dropping the request future closes its HTTP stream, including during model loading.
+#[derive(Default)]
+pub struct ChartRequests(Mutex<HashMap<String, oneshot::Sender<()>>>);
+
+#[derive(Clone, Serialize)]
+pub struct ChartEvent {
+    content: Option<String>,
+    started: bool,
+}
+
+#[tauri::command]
+pub fn cancel_visualize(request_id: String, requests: State<'_, ChartRequests>) {
+    if let Ok(mut active) = requests.inner().0.lock() {
+        if let Some(cancel) = active.remove(&request_id) { let _ = cancel.send(()); }
+    }
+}
+
 #[tauri::command]
 pub async fn visualize_selection(
-    host: String,
-    model: String,
-    text: String,
-    previous_response: Option<String>,
-    repair_error: Option<String>,
+    host: String, model: String, text: String,
+    previous_response: Option<String>, repair_error: Option<String>,
+    request_id: String, on_event: Channel<ChartEvent>, requests: State<'_, ChartRequests>,
+) -> Result<String, String> {
+    if request_id.is_empty() || request_id.len() > 128 { return Err("Invalid chart request id.".into()); }
+    let (cancel, cancelled) = oneshot::channel();
+    {
+        let mut active = requests.inner().0.lock().map_err(|_| "Chart request lock failed.")?;
+        if active.len() >= 16 || active.contains_key(&request_id) { return Err("A chart request is already active.".into()); }
+        active.insert(request_id.clone(), cancel);
+    }
+    let result = if on_event.send(ChartEvent { content: None, started: true }).is_err() {
+        Err("Chart panel closed.".into())
+    } else {
+        let task = tokio::spawn(generate_chart(host, model, text, previous_response, repair_error, on_event));
+        let abort = task.abort_handle();
+        let cancellation = tokio::spawn(async move { let _ = cancelled.await; abort.abort(); });
+        let result = match task.await {
+            Ok(result) => result,
+            Err(error) if error.is_cancelled() => Err("Chart cancelled.".into()),
+            Err(error) => Err(format!("Chart request failed: {error}")),
+        };
+        cancellation.abort();
+        result
+    };
+    if let Ok(mut active) = requests.inner().0.lock() { active.remove(&request_id); }
+    result
+}
+
+async fn generate_chart(
+    host: String, model: String, text: String,
+    previous_response: Option<String>, repair_error: Option<String>, on_event: Channel<ChartEvent>,
 ) -> Result<String, String> {
     let host = normalize_host(&host)?;
     let model = normalize_model(&model)?;
@@ -196,37 +245,60 @@ pub async fn visualize_selection(
         (None, None) => {}
         _ => return Err("Invalid chart repair context.".into()),
     }
-    let response = client()?
+    let mut response = client()?
         .post(format!("{host}/api/chat"))
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(600))
         .json(&serde_json::json!({
-            "model": model, "stream": false, "think": false, "format": "json", "keep_alive": "30m",
+            "model": model, "stream": true, "think": false, "format": "json", "keep_alive": "30m",
             "messages": messages,
             "options": { "temperature": 0.2, "num_predict": 8192 }
         }))
-        .send()
-        .await
-        .map_err(map_err)?;
+        .send().await.map_err(chart_err)?;
     let status = response.status();
-    let body = response.text().await.map_err(|err| err.to_string())?;
     if !status.is_success() {
-        return Err(error_message(&body));
+        let body = response.text().await.map_err(chart_err)?;
+        return Err(format!("Ollama HTTP {status}: {}", error_message(&body)));
     }
-    let payload: ChatResponse = serde_json::from_str(&body).map_err(|err| err.to_string())?;
-    if let Some(error) = payload.error {
-        return Err(error);
+    let mut pending = Vec::new();
+    let mut content = String::new();
+    let mut done = false;
+    let mut last_emit = Instant::now();
+    while let Some(chunk) = response.chunk().await.map_err(chart_err)? {
+        pending.extend_from_slice(&chunk);
+        if pending.len() > 512_000 { return Err("Ollama returned an oversized stream event.".into()); }
+        while let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
+            let event = pending.drain(..=end).collect::<Vec<_>>();
+            chart_line(&event, &mut content, &mut done)?;
+        }
+        if done || last_emit.elapsed() >= Duration::from_millis(100) {
+            on_event.send(ChartEvent { content: Some(content.clone()), started: false }).map_err(|_| "Chart panel closed.")?;
+            last_emit = Instant::now();
+        }
+        if done { break; }
     }
-    if payload.done_reason.as_deref() == Some("length") {
-        return Err("The model stopped before finishing the chart. Try a shorter idea.".into());
-    }
-    let content = payload
-        .message
-        .and_then(|message| message.content)
-        .unwrap_or_default();
-    if content.trim().is_empty() || content.len() > 128_000 {
-        return Err("The model returned an empty or oversized chart.".into());
-    }
+    if !pending.is_empty() { chart_line(&pending, &mut content, &mut done)?; }
+    if !done { return Err("Ollama disconnected before finishing the chart.".into()); }
+    if content.trim().is_empty() { return Err("The model returned an empty chart.".into()); }
+    on_event.send(ChartEvent { content: Some(content.clone()), started: false }).map_err(|_| "Chart panel closed.")?;
     Ok(content)
+}
+
+fn chart_err(err: reqwest::Error) -> String {
+    if err.is_timeout() && !err.is_connect() {
+        "Ollama generation exceeded 10 minutes. The server may still be running; try a smaller model or a shorter selection.".into()
+    } else { map_err(err) }
+}
+
+fn chart_line(line: &[u8], content: &mut String, done: &mut bool) -> Result<(), String> {
+    if line.iter().all(|byte| byte.is_ascii_whitespace()) { return Ok(()); }
+    if *done { return Err("Ollama sent data after the final response.".into()); }
+    let payload: ChatResponse = serde_json::from_slice(line).map_err(|err| format!("Invalid Ollama stream: {err}"))?;
+    if let Some(error) = payload.error { return Err(error); }
+    if payload.done_reason.as_deref() == Some("length") { return Err("The model stopped before finishing the chart. Try a shorter idea.".into()); }
+    if let Some(value) = payload.message.and_then(|message| message.content) { content.push_str(&value); }
+    if content.len() > 128_000 { return Err("The model returned an oversized chart.".into()); }
+    *done = payload.done.unwrap_or(false);
+    Ok(())
 }
 
 #[tauri::command]
@@ -297,6 +369,7 @@ fn edit_prompt(instruction: &str, text: &str) -> Result<String, String> {
 
 #[derive(Debug, Deserialize)]
 struct ChatResponse {
+    done: Option<bool>,
     message: Option<ChatMessage>,
     error: Option<String>,
     done_reason: Option<String>,
@@ -361,7 +434,24 @@ pub async fn edit_selection(
 
 #[cfg(test)]
 mod tests {
-    use super::{edit_prompt, format_budget, predict_budget};
+    use super::{chart_line, edit_prompt, format_budget, predict_budget};
+
+    #[test]
+    fn chart_stream_preserves_content_and_requires_completion() {
+        let mut output = String::new(); let mut done = false;
+        chart_line(br#"{"message":{"content":"first"},"done":false}"#, &mut output, &mut done).unwrap();
+        assert_eq!(output, "first"); assert!(!done);
+        chart_line(br#"{"message":{"content":" second"},"done":true}"#, &mut output, &mut done).unwrap();
+        assert_eq!(output, "first second"); assert!(done);
+        assert!(chart_line(br#"{"done":true}"#, &mut output, &mut done).is_err());
+    }
+
+    #[test]
+    fn chart_stream_rejects_errors_and_token_exhaustion() {
+        let mut output = String::new(); let mut done = false;
+        assert!(chart_line(br#"{"error":"model not found"}"#, &mut output, &mut done).unwrap_err().contains("model not found"));
+        assert!(chart_line(br#"{"done":true,"done_reason":"length"}"#, &mut output, &mut done).unwrap_err().contains("before finishing"));
+    }
 
     #[test]
     fn formatting_never_silently_truncates_input() {

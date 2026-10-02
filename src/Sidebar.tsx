@@ -167,7 +167,7 @@ export function Sidebar({
         widthCollapsed={52}
         classNames={{ header: "notes-sidebar-toolbar", content: "notes-sidebar-content" }}
         brand={
-            <SideActionRow data-tauri-drag-region>
+            <SideActionRow>
               <SideIconBtn label="New note" onClick={onCreate}>
                 <Plus className="size-4" />
               </SideIconBtn>

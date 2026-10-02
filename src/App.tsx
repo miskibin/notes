@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { useWindowGlass } from "./window-glass";
+import { WindowControls } from "./WindowControls";
 import { AppHeader } from "./AppHeader";
 import { AppFooter } from "./AppFooter";
 import { FormatDialog } from "./FormatDialog";
@@ -54,6 +56,7 @@ const VisualizeRun = lazy(() => import("./visualize/VisualizeRun"));
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => readSettings());
+  const glassStatus = useWindowGlass(settings.frostedGlass, settings.colorMode);
   const [screen, setScreen] = useState<Screen>("notes");
   const [sourceMode, setSourceMode] = useState(false);
   const [notes, setNotes] = useState<NoteFile[]>([]);
@@ -667,6 +670,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <WindowControls hidden={Boolean(formatSession || referenceDialog || searchOpen || historyEntries)} />
       <div className="app-body" inert={transitioning} aria-busy={transitioning}>
       <Sidebar
         notes={notes}
@@ -689,17 +693,13 @@ export default function App() {
       <main id="note-content" className="note-column" ref={columnRef}>
         <AppHeader title={headerTitle} screen={screen} sourceMode={sourceMode} onToggleSource={toggleSource} onNavigate={(next) => void navigate(next)}
           onReference={() => setReferenceDialog("new")} onHistory={openHistory} />
-        {visualSession ? <Suspense fallback={<div className="visualize-loading" role="status">Preparing chart…</div>}><VisualizeRun key={visualSession.id}
-          idea={visualSession.selection.text} host={settings.ollamaHost} model={settings.editModel}
-          onClose={closeVisualize} onInsert={insertChart}
-          onBusy={(busy) => { setVisualBusy(busy); visualRef.current = busy ? visualSession : null; }}
-          onSettings={() => { closeVisualize(); void navigate("settings"); }} /></Suspense> : null}
         <div className={`note-scroll${screen === "settings" ? " note-scroll-settings" : ""}`} ref={scrollRef}>
         {!ready ? <p className="empty">Opening notes…</p> : null}
         {loadError ? <div className="error-line" role="alert"><span>{loadError}</span><button type="button" onClick={() => setLoadError(null)}>Dismiss</button></div> : null}
         {ready && screen === "settings" ? (
           <SettingsPage
             settings={settings}
+            glassStatus={glassStatus}
             models={models}
             modelError={modelError}
             onChange={persist}
@@ -744,6 +744,11 @@ export default function App() {
         {ready && screen === "notes" && !active && !loadError ? <p className="empty">No notes yet.</p> : null}
         </div>
       </main>
+      {visualSession ? <aside className="visualize-panel" aria-label="Visualization"><Suspense fallback={<div className="visualize-loading" role="status">Preparing chart…</div>}><VisualizeRun key={visualSession.id}
+          idea={visualSession.selection.text} host={settings.ollamaHost} model={settings.editModel}
+          onClose={closeVisualize} onInsert={insertChart}
+          onBusy={(busy) => { setVisualBusy(busy); visualRef.current = busy ? visualSession : null; }}
+          onSettings={() => { closeVisualize(); void navigate("settings"); }} /></Suspense></aside> : null}
       </div>
       <AppFooter saveState={saveState} words={words} enabled={settings.autocomplete} model={settings.model}
         status={completionStatus} error={completionError} sourceMode={sourceMode} editing={ready && screen === "notes" && Boolean(active)}
