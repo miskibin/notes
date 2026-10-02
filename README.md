@@ -2,6 +2,8 @@
 
 A local Markdown notebook built with Tauri and React. Notes are `.md` files in your chosen folder, with live preview, LaTeX math and embedded charts.
 
+Download the [Windows x64 installer](https://github.com/miskibin/notes/releases/latest). Releases include the scientific Python runtime and a SHA-256 checksum. Local Ollama models are configured separately in Settings → Notes.
+
 ## Writing tools
 
 - The footer shows save status, a word count, and autocomplete status. Click Autocomplete to toggle suggestions; Tab accepts one and Esc dismisses it. Autocomplete pauses in Markdown source mode.

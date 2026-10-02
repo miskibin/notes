@@ -1,0 +1,73 @@
+name: Windows release
+
+on:
+  push:
+    branches: ['release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: rustup update stable --no-self-update
+      - run: rustup default stable
+      - name: Build Windows installer and stage release
+        id: tauri
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --bundles nsis --ci -- --locked
+          tagName: v__VERSION__
+          releaseName: Notes __VERSION__
+          releaseDraft: true
+          prerelease: false
+          uploadUpdaterJson: false
+          releaseBody: |
+            Windows x64 installer: download the file ending in `-setup.exe`.
+
+            - Minimal history and reference dialogs.
+            - Visualize: Python charts inserted as PNGs, a compact right activity pane, live model output and bounded error repair.
+            - Correct Ollama timeout reporting, streaming and native cancellation.
+            - Reachable window controls and restored full-height titlebar dragging.
+            - Experimental Windows frosted glass, disabled by default in Settings → Appearance.
+
+            Configure local Ollama models in Settings → Notes. The installer includes the scientific Python runtime. This build is unsigned.
+      - name: Add checksum and publish completed release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_VERSION: ${{ steps.tauri.outputs.appVersion }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "v$env:APP_VERSION"
+          $installers = @(Get-ChildItem 'src-tauri/target/release/bundle/nsis/*-setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one Windows installer.' }
+          $installer = $installers[0]
+          if ($installer.Length -lt 1MB) { throw 'Installer is unexpectedly small.' }
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($installer.Name)" | Set-Content SHA256SUMS.txt -Encoding ascii
+          $release = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not verify staged release.' }
+          if ($installer.Name -notin $release.assets.name) { throw 'Installer upload is missing.' }
+          gh release upload $tag SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Checksum upload failed.' }
+          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }

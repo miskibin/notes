@@ -19,7 +19,7 @@ export function AppHeader({
   onHistory: () => void;
 }) {
   return (
-    <header className="app-header">
+    <header className="app-header" data-tauri-drag-region>
       {screen === "settings" ? (
         <button type="button" className="app-header-mode" aria-label="Back to notes" title="Back to notes" onClick={() => onNavigate("notes")}>
           <ArrowLeft aria-hidden />
@@ -27,7 +27,7 @@ export function AppHeader({
       ) : null}
       {screen === "notes" && title ? (
         <div className="app-header-title" title={title} data-tauri-drag-region>
-          <span>{title}</span>
+          <span data-tauri-drag-region>{title}</span>
         </div>
       ) : <span className="app-header-page" data-tauri-drag-region>{screen === "settings" ? "Settings" : ""}</span>}
       <div className="app-header-spacer" data-tauri-drag-region />
@@ -41,7 +41,7 @@ export function AppHeader({
         </button>
         </>
       ) : null}
-      {isTauri() ? <div className="window-controls-slot" aria-hidden /> : null}
+      {isTauri() ? <div className="window-controls-slot" data-tauri-drag-region aria-hidden /> : null}
     </header>
   );
 }
