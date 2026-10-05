@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 // An isolated browser vault keeps this smoke test away from desktop notes.
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE });
 const context = await browser.newContext({ viewport: { width: 1100, height: 760 } });
 const page = await context.newPage();
 const errors = [];

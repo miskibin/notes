@@ -7,6 +7,7 @@ Download the [Windows x64 installer](https://github.com/miskibin/notes/releases/
 ## Writing tools
 
 - The footer shows save status, a word count, and autocomplete status. Click Autocomplete to toggle suggestions; Tab accepts one and Esc dismisses it. Autocomplete pauses in Markdown source mode.
+- Suggestions start after a short typing pause, including unfinished words, and stream complete words as they arrive. Typing the suggested prefix keeps the remaining suggestion. Moving the caret, changing models, leaving the editor or pressing Esc cancels the outstanding Ollama request; recent results are reused within the current editor. Formula source and code never trigger suggestions.
 - **Format Markdown** uses the Ollama edit model to organize the whole note into headings, paragraphs, lists and math. Review the rendered preview or Markdown source, then Apply formatting or Discard. Ctrl+Z undoes an applied format in one step. Formatting runs when you click it, and supports notes up to 24,000 Unicode characters.
 - Select text and press **Ctrl+E** to edit a fragment with an instruction.
 - Select an idea, right-click and choose **Visualize** (or **Ctrl+Alt+V**). The edit model writes a matplotlib chart using NumPy and SciPy. The chart is saved and inserted after the selection automatically. A narrow right sidebar shows progress and streamed model output; expand Details to inspect exact model requests/responses, Python code, errors and attempt timings, or copy the log. There is no chart modal or chat interface. Ctrl+Z undoes insertion; illustrative data is labeled. Desktop charts are PNG files in the vault's `assets/` folder.
@@ -52,7 +53,7 @@ npm run tauri build -- --debug --no-bundle
 
 The desktop build is written to `src-tauri/target/debug/notes.exe`.
 
-Browser regression scripts use an isolated temporary vault. Install Playwright outside the app or set `PLAYWRIGHT_MODULE` to its import path (and optionally `CHROMIUM_EXECUTABLE` for the two workspace/visualize smoke scripts), start the dev server, then run:
+Browser regression scripts use an isolated temporary vault. Install Playwright outside the app or set `PLAYWRIGHT_MODULE` to its import path (and optionally `CHROMIUM_EXECUTABLE` for scripts that support it), start the dev server, then run:
 
 ```powershell
 node scripts/polish-smoke.mjs
@@ -62,11 +63,14 @@ node scripts/workspace-smoke.mjs
 node scripts/context-menu-smoke.mjs
 node scripts/editor-smoke.mjs
 node scripts/math-paste-smoke.mjs
+node scripts/editor-reliability-smoke.mjs
 node scripts/rendered-navigation-smoke.mjs
 node scripts/redesign-smoke.mjs
 ```
 
 `polish-smoke.mjs` mocks Ollama to verify formatting, undo, cancellation, errors and autocomplete states without running model jobs. Screenshots and results are in `artifacts/polish/`.
+
+`editor-reliability-smoke.mjs` uses a local delayed Ollama stream to check early suggestions, prefix reuse, Tab/Esc and actual request disconnection. It also covers display-math closing fences, preservation of trailing text, escaped dollars and writing between adjacent formulas. It does not measure real model inference speed.
 
 `visualize-smoke.mjs` mocks the model response but executes the real scientific Python worker, then checks automatic source/rich insertion, undo, the inspectable trace, error-driven repairs, the attempt limit, cancellation and stale-selection protection. `test:python` additionally checks restricted operations and renders SciPy, 3D and diagram examples. Real model output quality depends on the selected Ollama model.
 

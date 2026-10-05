@@ -8,7 +8,7 @@ export function isRenderedNode(node: ProseNode | null | undefined): boolean {
   return !!node && ["math_inline", "math_block", "chart_block", "image-block"].includes(node.type.name);
 }
 
-export function boundarySelection(state: EditorState, pos: number, side: -1 | 1): Selection {
+export function boundarySelection(state: Pick<EditorState, "doc">, pos: number, side: -1 | 1): Selection {
   const $pos = state.doc.resolve(pos);
   if ($pos.parent.inlineContent) return TextSelection.create(state.doc, pos);
   const closed = (node: ProseNode | null) => !node || node.isAtom || isRenderedNode(node) || !node.inlineContent;

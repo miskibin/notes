@@ -1,5 +1,7 @@
 import { Schema } from "@milkdown/kit/prose/model";
-import { EditorState, TextSelection } from "@milkdown/kit/prose/state";
+import { GapCursor } from "@milkdown/kit/prose/gapcursor";
+import type { EditorView } from "@milkdown/kit/prose/view";
+import { EditorState, TextSelection, type Transaction } from "@milkdown/kit/prose/state";
 import { history, undo } from "@milkdown/kit/prose/history";
 import { describe, expect, it } from "vitest";
 import { mathEditingPlugin, mathSource, mathSpec, mathValue } from "./math-document";
@@ -63,5 +65,36 @@ describe("editable math source", () => {
     const deleted = state.applyTransaction(state.tr.deleteSelection()).state;
     expect(deleted.doc.textContent).toBe("");
     deleted.doc.check();
+  });
+});
+
+
+describe("leaving adjacent formulas", () => {
+  it("Escape stops between formulas instead of entering the next source", () => {
+    const first = block(mathSource("x^2", true)), second = block(mathSource("y^2", true));
+    const doc = schema.nodes.doc.create(null, [first, second]);
+    const plugin = mathEditingPlugin();
+    let state = EditorState.create({ doc, selection: TextSelection.create(doc, 4), plugins: [plugin] });
+    const view = { get state() { return state; }, dom: { ownerDocument: { getSelection: () => null } },
+      dispatch(tr: Transaction) { state = state.applyTransaction(tr).state; } } as unknown as EditorView;
+    expect(plugin.props.handleKeyDown!.call(plugin, view, { key: "Escape" } as KeyboardEvent)).toBe(true);
+    expect(state.selection).toBeInstanceOf(GapCursor);
+    expect(state.selection.from).toBe(first.nodeSize);
+    expect(state.doc.child(1)).toEqual(second);
+    state.doc.check();
+  });
+
+  it("Escape from the final formula creates a normal writing position", () => {
+    const first = block(mathSource("x^2", true));
+    const doc = schema.nodes.doc.create(null, first);
+    const plugin = mathEditingPlugin();
+    let state = EditorState.create({ doc, selection: TextSelection.create(doc, 4), plugins: [plugin] });
+    const view = { get state() { return state; }, dom: { ownerDocument: { getSelection: () => null } },
+      dispatch(tr: Transaction) { state = state.applyTransaction(tr).state; } } as unknown as EditorView;
+    plugin.props.handleKeyDown!.call(plugin, view, { key: "Escape" } as KeyboardEvent);
+    state = state.applyTransaction(state.tr.insertText("after")).state;
+    expect(state.doc.child(0)).toEqual(first);
+    expect(state.doc.child(1).textContent).toBe("after");
+    state.doc.check();
   });
 });

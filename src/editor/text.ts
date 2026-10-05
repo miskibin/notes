@@ -1,5 +1,3 @@
-const WORD = /[\p{L}\p{N}_]/u;
-
 export function lineToContinue(prefix: string): string | null {
   const last = prefix.split("\n").pop() ?? "";
   if (last.trim() === "") return null;
@@ -19,11 +17,9 @@ export function lineTail(line: string, max = 80): string {
 }
 
 export function caretAllowsCompletion(prefix: string, after: string): boolean {
-  if (after.length > 0) return false;
-  const last = prefix.slice(-1);
-  if (!last) return false;
-  if (/\s/.test(last) || /[.!?…]/.test(last)) return true;
-  return !WORD.test(last);
+  // A pause is enough to request a continuation, including an unfinished word.
+  // Never place a suggestion in front of existing text or another inline node.
+  return prefix.trim().length > 0 && /^[\t ]*$/.test(after);
 }
 
 const SIMPLE_MATH = /^(-?\d+)\s*([+\-*/])\s*(-?\d+)\s*=\s*$/;
@@ -120,13 +116,12 @@ export function completionPlan(options: {
   code: boolean;
 }): CompletionPlan {
   if (!options.enabled || options.code) return null;
-  if (options.after.length > 0) return null;
+  if (!caretAllowsCompletion(options.before, options.after)) return null;
   const line = lineToContinue(options.before);
   if (!line) return null;
   const local = localLineCompletion(options.before);
   if (local) return { kind: "local", text: local };
-  if (!options.model.trim() || line.trim().length < 8) return null;
-  if (!caretAllowsCompletion(options.before, options.after)) return null;
+  if (!options.model.trim() || line.trim().length < 4) return null;
   const prompt = lineTail(line);
   if (!prompt.trim()) return null;
   return { kind: "model", prompt, prefixLine: line };
