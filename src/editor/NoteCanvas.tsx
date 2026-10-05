@@ -97,16 +97,17 @@ export function NoteCanvas({
       .config((ctx) => {
         configureChartSchema(ctx);
         configureWikiSerialization(ctx);
+        const paste = markdownPaste(ctx);
         ctx.update(editorViewOptionsCtx, (prev) => ({
           ...prev,
           attributes: { spellcheck: "false", "aria-label": "Note editor" },
+          handlePaste: (view, event, slice) => paste(view, event) || prev.handlePaste?.(view, event, slice) || false,
         }));
       })
       .use(flatPlugins(mathPlugins))
       .use(flatPlugins(chartPlugins))
       .use(flatPlugins(wikiPlugins))
-      .use(imageDefaults)
-      .use(markdownPaste);
+      .use(imageDefaults);
     if (!readOnly) crepe.editor.use(renderedNodeNavigation).use(autocomplete(bridgeRef.current)).use(inlineEdit(bridgeRef.current)).use(editorShortcuts());
     let ready = false;
     let initialDoc: ProseNode | null = null;

@@ -7,6 +7,7 @@ import { markdown as markdownLanguage } from "@codemirror/lang-markdown";
 import { searchKeymap } from "@codemirror/search";
 import type { EditorHandle, EditorHandleRef } from "./editor-handle";
 import { sourceSyntax } from "./source-syntax";
+import { isLiteralMarkdownSelection, normalizePastedMath } from "./math-paste";
 
 export function SourceCanvas({ noteKey, markdown, onChange, editorHandle }: {
   noteKey: string;
@@ -30,6 +31,12 @@ export function SourceCanvas({ noteKey, markdown, onChange, editorHandle }: {
           EditorView.lineWrapping,
           keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
           EditorView.contentAttributes.of({ "aria-label": "Markdown source", spellcheck: "false" }),
+          EditorView.clipboardInputFilter.of((text, state) => {
+            const document = state.doc.toString();
+            if (state.selection.ranges.some(({ from, to }) => isLiteralMarkdownSelection(document, from, to))) return text;
+            const { from, to } = state.selection.main;
+            return normalizePastedMath(text, document.slice(0, from), document.slice(to));
+          }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) changeRef.current(update.state.doc.toString());
           }),
