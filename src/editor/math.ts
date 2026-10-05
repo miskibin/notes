@@ -74,7 +74,9 @@ const mathInlineInput = $inputRule((ctx) => new InputRule(/\$(?!\$)([^$\n]+)\$$/
   if (!value.trim() || (start > 0 && state.doc.textBetween(start - 1, start) === "$")) return null;
   const node = mathInlineSchema.type(ctx).create(null, state.schema.text(mathSource(value, false)));
   const tr = state.tr.replaceWith(start, end, node);
-  return tr.setSelection(TextSelection.create(tr.doc, start + node.nodeSize - 2));
+  // Completing the closing fence means the next character belongs to prose.
+  // Keeping the caret inside would append a second formula to this one's source.
+  return tr.setSelection(TextSelection.create(tr.doc, start + node.nodeSize));
 }));
 
 const mathBlockInput = $inputRule((ctx) => new InputRule(/^\$\$\s$/, (state, _match, start) => {
