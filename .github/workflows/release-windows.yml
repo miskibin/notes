@@ -43,11 +43,11 @@ jobs:
           releaseBody: |
             Windows x64 installer: download the file ending in `-setup.exe`.
 
-            - Minimal history and reference dialogs.
-            - Visualize: Python charts inserted as PNGs, a compact right activity pane, live model output and bounded error repair.
-            - Correct Ollama timeout reporting, streaming and native cancellation.
-            - Reachable window controls and restored full-height titlebar dragging.
-            - Experimental Windows frosted glass, disabled by default in Settings → Appearance.
+            - Pasted ChatGPT formulas convert automatically to Notes math syntax in both editors, including doubled delimiter backslashes.
+            - Separate display formulas, inline math, LaTeX commands and matrix rows are preserved.
+            - Normal browser paste handles recognized Markdown before competing HTML clipboard content; code and existing math stay literal.
+            - Markdown markers remain visible at 75% opacity.
+            - One-step paste undo and source/preview switching are covered by browser regression tests.
 
             Configure local Ollama models in Settings → Notes. The installer includes the scientific Python runtime. This build is unsigned.
       - name: Add checksum and publish completed release
