@@ -11,6 +11,7 @@ Download the [Windows x64 installer](https://github.com/miskibin/notes/releases/
 - Select text and press **Ctrl+E** to edit a fragment with an instruction.
 - Select an idea, right-click and choose **Visualize** (or **Ctrl+Alt+V**). The edit model writes a matplotlib chart using NumPy and SciPy. The chart is saved and inserted after the selection automatically. A narrow right sidebar shows progress and streamed model output; expand Details to inspect exact model requests/responses, Python code, errors and attempt timings, or copy the log. There is no chart modal or chat interface. Ctrl+Z undoes insertion; illustrative data is labeled. Desktop charts are PNG files in the vault's `assets/` folder.
 - **Ctrl+Shift+M** switches between live preview and Markdown source; **Ctrl+K** searches notes.
+- Pasting ChatGPT formulas automatically converts `\(…\)` to `$…$` and `\[…\]` to fenced `$$` blocks in both editors, including doubled delimiter backslashes. LaTeX commands stay intact; code, link URLs and existing dollar formulas stay literal. Markdown markers remain visible with reduced opacity.
 - Click the space before or after a formula or chart to write beside it. Click a chart to select it, then press Delete or Backspace; Ctrl+Z restores it. At the start/end of adjacent text, Backspace/Delete first selects the object. Click a formula to edit its LaTeX; use a chart's Source button to edit its data.
 - **Ctrl+K** opens a search dialog for titles, note bodies and reference labels/URLs. Arrow keys select a result; Enter opens it and selects the matching text when present in the document. An empty query shows recently opened notes from this session.
 - **Ctrl+Shift+L** adds a local reference to a web page, Jira issue, GitHub/Gerrit change or Teams link. Paste the URL to preview its automatic label, then save; no description field. Use its pencil button to change the link or remove it. Existing custom labels are preserved when the URL stays the same. References are stored in Markdown YAML; adding one makes no network request.
@@ -60,6 +61,7 @@ node scripts/storage-smoke.mjs
 node scripts/workspace-smoke.mjs
 node scripts/context-menu-smoke.mjs
 node scripts/editor-smoke.mjs
+node scripts/math-paste-smoke.mjs
 node scripts/rendered-navigation-smoke.mjs
 node scripts/redesign-smoke.mjs
 ```
