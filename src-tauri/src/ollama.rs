@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Mutex, time::{Duration, Instant}};
+use std::{collections::HashMap, sync::{Mutex, OnceLock}, time::{Duration, Instant}};
 use tauri::{ipc::Channel, State};
 use tokio::sync::oneshot;
 
@@ -22,6 +22,7 @@ struct TagModel {
 
 #[derive(Debug, Deserialize)]
 struct GenerateResponse {
+    done: Option<bool>,
     response: Option<String>,
     done_reason: Option<String>,
     error: Option<String>,
@@ -53,11 +54,12 @@ fn normalize_model(model: &str) -> Result<String, String> {
 }
 
 fn client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    CLIENT.get_or_init(|| reqwest::Client::builder()
         .user_agent("notes-app")
         .connect_timeout(Duration::from_secs(5))
         .build()
-        .map_err(|err| format!("HTTP client failed: {err}"))
+        .map_err(|err| format!("HTTP client failed: {err}"))).clone()
 }
 
 fn map_err(err: reqwest::Error) -> String {
@@ -97,60 +99,111 @@ pub async fn list_models(host: String) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
+#[derive(Default)]
+pub struct CompletionRequests(Mutex<HashMap<String, oneshot::Sender<()>>>);
+
+#[derive(Clone, Serialize)]
+pub struct CompletionEvent {
+    text: Option<String>,
+    started: bool,
+}
+
+#[tauri::command]
+pub fn cancel_completion(request_id: String, requests: State<'_, CompletionRequests>) {
+    if let Ok(mut active) = requests.inner().0.lock() {
+        if let Some(cancel) = active.remove(&request_id) { let _ = cancel.send(()); }
+    }
+}
+
 #[tauri::command]
 pub async fn complete_line(
-    host: String,
-    model: String,
-    line: String,
+    host: String, model: String, line: String,
+    request_id: String, on_event: Channel<CompletionEvent>, requests: State<'_, CompletionRequests>,
 ) -> Result<Completion, String> {
+    if request_id.is_empty() || request_id.len() > 128 { return Err("Invalid completion request id.".into()); }
+    let (cancel, cancelled) = oneshot::channel();
+    {
+        let mut active = requests.inner().0.lock().map_err(|_| "Completion request lock failed.")?;
+        if active.len() >= 16 || active.contains_key(&request_id) { return Err("Too many active completions.".into()); }
+        active.insert(request_id.clone(), cancel);
+    }
+    let result = if on_event.send(CompletionEvent { text: None, started: true }).is_err() {
+        Err("Editor closed.".into())
+    } else {
+        let task = tokio::spawn(generate_completion(host, model, line, on_event));
+        let abort = task.abort_handle();
+        let cancellation = tokio::spawn(async move { let _ = cancelled.await; abort.abort(); });
+        let result = match task.await {
+            Ok(result) => result,
+            Err(error) if error.is_cancelled() => Err("Completion cancelled.".into()),
+            Err(error) => Err(format!("Completion request failed: {error}")),
+        };
+        cancellation.abort();
+        result
+    };
+    if let Ok(mut active) = requests.inner().0.lock() { active.remove(&request_id); }
+    result
+}
+
+fn completion_request(model: &str, line: &str) -> serde_json::Value {
+    serde_json::json!({
+        "model": model, "prompt": line, "stream": true, "raw": true,
+        "think": false, "keep_alive": "30m",
+        "options": {
+            "num_predict": 16, "num_ctx": 1024, "temperature": 0.2,
+            "top_p": 0.9, "repeat_penalty": 1.08, "stop": ["\n"]
+        }
+    })
+}
+
+async fn generate_completion(host: String, model: String, line: String, on_event: Channel<CompletionEvent>) -> Result<Completion, String> {
     let host = normalize_host(&host)?;
     let model = normalize_model(&model)?;
-    let line = line.chars().take(300).collect::<String>();
-    if line.trim().is_empty() {
-        return Ok(Completion {
-            text: String::new(),
-            truncated: false,
-        });
-    }
-    let response = client()?
+    let chars: Vec<char> = line.chars().collect();
+    let line: String = chars[chars.len().saturating_sub(300)..].iter().collect();
+    if line.trim().is_empty() { return Ok(Completion { text: String::new(), truncated: false }); }
+    let mut response = client()?
         .post(format!("{host}/api/generate"))
-        .timeout(Duration::from_secs(8))
-        .json(&serde_json::json!({
-            "model": model,
-            "prompt": line,
-            "stream": false,
-            "raw": true,
-            "think": false,
-            "keep_alive": "30m",
-            "options": {
-                "num_predict": 16,
-                "temperature": 0.2,
-                "top_p": 0.9,
-                "repeat_penalty": 1.08
-            }
-        }))
-        .send()
-        .await
-        .map_err(map_err)?;
-    let status = response.status();
-    let body = response.text().await.map_err(|err| err.to_string())?;
-    if !status.is_success() {
-        return Err(error_message(&body));
+        .timeout(Duration::from_secs(30))
+        .json(&completion_request(&model, &line))
+        .send().await.map_err(map_err)?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.map_err(map_err)?;
+        return Err(format!("Ollama HTTP {status}: {}", error_message(&body)));
     }
-    let payload: GenerateResponse = serde_json::from_str(&body).map_err(|err| err.to_string())?;
-    if let Some(error) = payload.error {
-        return Err(error);
+    let mut pending = Vec::new();
+    let mut result = Completion { text: String::new(), truncated: false };
+    let mut done = false;
+    let mut last_emit = Instant::now();
+    while let Some(chunk) = response.chunk().await.map_err(map_err)? {
+        pending.extend_from_slice(&chunk);
+        if pending.len() > 16_000 { return Err("Ollama returned an oversized completion event.".into()); }
+        while !done {
+            let Some(end) = pending.iter().position(|byte| *byte == b'\n') else { break; };
+            let event = pending.drain(..=end).collect::<Vec<_>>();
+            completion_line(&event, &mut result, &mut done)?;
+        }
+        if done || last_emit.elapsed() >= Duration::from_millis(40) {
+            on_event.send(CompletionEvent { text: Some(result.text.clone()), started: false }).map_err(|_| "Editor closed.")?;
+            last_emit = Instant::now();
+        }
+        if done { break; }
     }
-    let text = payload
-        .response
-        .unwrap_or_default()
-        .chars()
-        .take(2000)
-        .collect();
-    Ok(Completion {
-        truncated: payload.done_reason.as_deref() == Some("length"),
-        text,
-    })
+    if !done && !pending.is_empty() { completion_line(&pending, &mut result, &mut done)?; }
+    if !done { return Err("Ollama disconnected before finishing the completion.".into()); }
+    Ok(result)
+}
+
+fn completion_line(line: &[u8], result: &mut Completion, done: &mut bool) -> Result<(), String> {
+    if line.iter().all(|byte| byte.is_ascii_whitespace()) { return Ok(()); }
+    let event: GenerateResponse = serde_json::from_slice(line).map_err(|err| format!("Invalid Ollama completion stream: {err}"))?;
+    if let Some(error) = event.error { return Err(error); }
+    if let Some(text) = event.response { result.text.push_str(&text); }
+    if result.text.chars().count() > 2000 { return Err("Ollama returned an oversized completion.".into()); }
+    result.truncated = event.done_reason.as_deref() == Some("length");
+    *done = event.done.unwrap_or(false);
+    Ok(())
 }
 
 const EDIT_SYSTEM: &str = "\
@@ -434,7 +487,27 @@ pub async fn edit_selection(
 
 #[cfg(test)]
 mod tests {
-    use super::{chart_line, edit_prompt, format_budget, predict_budget};
+    use super::{chart_line, completion_line, completion_request, Completion, edit_prompt, format_budget, predict_budget};
+
+    #[test]
+    fn completion_stream_preserves_text_and_truncation() {
+        let mut result = Completion { text: String::new(), truncated: false };
+        let mut done = false;
+        completion_line(br#"{"response":" notes","done":false}"#, &mut result, &mut done).unwrap();
+        assert_eq!(result.text, " notes"); assert!(!done);
+        completion_line(br#"{"response":" today","done":true,"done_reason":"length"}"#, &mut result, &mut done).unwrap();
+        assert_eq!(result.text, " notes today"); assert!(done); assert!(result.truncated);
+        assert!(completion_line(br#"{"error":"model not found"}"#, &mut result, &mut done).is_err());
+    }
+
+    #[test]
+    fn completion_uses_small_streaming_context() {
+        let request = completion_request("demo", "hello");
+        assert_eq!(request["stream"], true);
+        assert_eq!(request["think"], false);
+        assert_eq!(request["options"]["num_ctx"], 1024);
+        assert_eq!(request["options"]["stop"][0], "\n");
+    }
 
     #[test]
     fn chart_stream_preserves_content_and_requires_completion() {

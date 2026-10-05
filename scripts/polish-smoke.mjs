@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 // An isolated browser vault and mocked Ollama: no desktop notes or model jobs are touched.
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE });
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "pl-PL" });
 await context.addInitScript(() => localStorage.setItem("notes-settings", JSON.stringify({
   appearanceRev: 2, colorMode: "dark", palette: "ink", contentWidth: "comfortable",
@@ -32,7 +32,7 @@ await page.route("**/api/generate", async route => {
   const mode = completionMode;
   if (mode === "delayed") await new Promise(resolve => { releaseCompletion = resolve; });
   await route.fulfill({ status: mode === "error" ? 503 : 200,
-    json: mode === "error" ? { error: "Ollama is offline" } : { response: "kolejna myśl.", done_reason: "stop" } });
+    json: mode === "error" ? { error: "Ollama is offline" } : { response: "kolejna myśl.", done: true, done_reason: "stop" } }).catch(() => {});
 });
 const artifacts = resolve("artifacts/polish");
 await mkdir(artifacts, { recursive: true });

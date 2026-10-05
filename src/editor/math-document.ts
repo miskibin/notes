@@ -1,6 +1,7 @@
 import type { Node as ProseNode, NodeSpec } from "@milkdown/kit/prose/model";
 import { AllSelection, Plugin, TextSelection, type EditorState } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/view";
+import { boundarySelection } from "./rendered-nodes";
 
 export function mathSource(value: string, display: boolean): string {
   return display ? `$$\n${value}\n$$` : `$${value}$`;
@@ -30,6 +31,7 @@ export function mathSpec(display: boolean): NodeSpec {
     content: "text*",
     marks: "",
     code: true,
+    isolating: display,
     defining: true,
     createGapCursor: display,
     parseDOM: [{ tag: `${tag}[data-type="${name}"]`, preserveWhitespace: "full", contentElement: ".math-source" }],
@@ -37,7 +39,7 @@ export function mathSpec(display: boolean): NodeSpec {
   };
 }
 
-function touches(state: EditorState, pos: number, node: ProseNode): boolean {
+export function mathSelectionTouches(state: EditorState, pos: number, node: ProseNode): boolean {
   if (!(state.selection instanceof TextSelection || state.selection instanceof AllSelection)) return false;
   const { from, to } = state.selection;
   return from <= pos + node.nodeSize - 1 && to >= pos + 1;
@@ -58,9 +60,12 @@ export function syncMathSelection(view: EditorView): boolean {
 // A damaged fence stays editable while the cursor is inside. Leaving it
 // turns it into ordinary text, preserving everything the user typed.
 export function mathEditingPlugin(): Plugin {
+  let cachedState: EditorState | undefined;
+  let cachedDecorations: DecorationSet;
   return new Plugin({
     props: {
       decorations(state) {
+        if (cachedState && state.doc === cachedState.doc && state.selection.eq(cachedState.selection)) return cachedDecorations;
         const decorations: Decoration[] = [];
         state.doc.descendants((node, pos) => {
           if (!isMath(node)) return;
@@ -71,14 +76,16 @@ export function mathEditingPlugin(): Plugin {
             decorations.push(Decoration.inline(contentStart, contentStart + fence, { class: "markdown-syntax" }));
             decorations.push(Decoration.inline(contentStart + node.content.size - fence, contentStart + node.content.size, { class: "markdown-syntax" }));
           }
-          if (touches(state, pos, node) || value == null || !value.trim()) {
+          if (mathSelectionTouches(state, pos, node) || value == null || !value.trim()) {
             decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: "math-editing" }));
           } else {
             decorations.push(Decoration.node(pos, pos + node.nodeSize, { contenteditable: "false" }));
           }
           return false;
         });
-        return DecorationSet.create(state.doc, decorations);
+        cachedState = state;
+        cachedDecorations = DecorationSet.create(state.doc, decorations);
+        return cachedDecorations;
       },
       handleKeyDown(view, event) {
         if (event.isComposing) return false;
@@ -99,10 +106,11 @@ export function mathEditingPlugin(): Plugin {
         if (exit) {
           let tr = view.state.tr;
           const after = $from.after();
-          if (node.isBlock && !tr.doc.nodeAt(after)?.isTextblock) {
+          if (node.isBlock && after === tr.doc.content.size) {
             tr = tr.insert(after, view.state.schema.nodes.paragraph!.create());
           }
-          view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(after), 1)).scrollIntoView());
+          const selection = boundarySelection({ doc: tr.doc }, after, 1);
+          view.dispatch(tr.setSelection(selection).scrollIntoView());
           return true;
         }
         if (empty && event.key === "Enter" && node.isBlock) {
@@ -117,7 +125,7 @@ export function mathEditingPlugin(): Plugin {
       const invalid: { pos: number; node: ProseNode }[] = [];
       state.doc.descendants((node, pos) => {
         if (!isMath(node)) return;
-        if (!touches(state, pos, node) && mathValue(node.textContent, node.isBlock) == null) invalid.push({ pos, node });
+        if (!mathSelectionTouches(state, pos, node) && mathValue(node.textContent, node.isBlock) == null) invalid.push({ pos, node });
         return false;
       });
       if (!invalid.length) return null;

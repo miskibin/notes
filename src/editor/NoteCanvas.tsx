@@ -225,6 +225,7 @@ export function NoteCanvas({
 
   const enabled = bridge.current.enabled;
   const model = bridge.current.model;
+  const ollamaHost = bridge.current.host;
   useEffect(() => {
     if (readOnly) return;
     const editor = crepeRef.current?.editor;
@@ -233,7 +234,7 @@ export function NoteCanvas({
       const view = ctx.get(editorViewCtx);
       view.dispatch(view.state.tr.setMeta("autocomplete-config", true));
     });
-  }, [enabled, model, readOnly]);
+  }, [enabled, model, ollamaHost, readOnly]);
 
   return <div className="note-canvas" ref={hostRef} spellCheck={false} />;
 }

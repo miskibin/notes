@@ -57,9 +57,11 @@ describe("completion", () => {
     expect(localLineCompletion("2 + 2 = ")).toBe("4");
   });
 
-  it("does not complete mid-word", () => {
-    expect(caretAllowsCompletion("i dont", "")).toBe(false);
+  it("can complete a paused word, but never inserts before existing text", () => {
+    expect(caretAllowsCompletion("i dont", "")).toBe(true);
     expect(caretAllowsCompletion("i dont ", "")).toBe(true);
+    expect(caretAllowsCompletion("i dont", "  ")).toBe(true);
+    expect(caretAllowsCompletion("i dont", " know")).toBe(false);
     expect(
       completionPlan({
         before: "i dont",
@@ -68,7 +70,7 @@ describe("completion", () => {
         model: "demo",
         code: false,
       }),
-    ).toBeNull();
+    ).toEqual({ kind: "model", prompt: "i dont", prefixLine: "i dont" });
   });
 
   it("drops an echoed line and an unfinished token", () => {

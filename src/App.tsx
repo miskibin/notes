@@ -103,7 +103,7 @@ export default function App() {
     enabled: false,
     model: "",
     editModel: "",
-    complete: (line) => completeLine(settings.ollamaHost, settings.model, line),
+    complete: (line, signal, onProgress) => completeLine(settings.ollamaHost, settings.model, line, signal, onProgress),
     edit: (instruction, text) => editSelection(settings.ollamaHost, settings.editModel, instruction, text),
   });
   settingsRef.current = settings;
@@ -112,9 +112,10 @@ export default function App() {
   searchDocumentsRef.current = searchDocuments;
   bridge.current = {
     enabled: settings.autocomplete,
+    host: settings.ollamaHost,
     model: settings.model,
     editModel: settings.editModel,
-    complete: (line) => completeLine(settingsRef.current.ollamaHost, settingsRef.current.model, line),
+    complete: (line, signal, onProgress) => completeLine(settingsRef.current.ollamaHost, settingsRef.current.model, line, signal, onProgress),
     edit: (instruction, text) =>
       editSelection(settingsRef.current.ollamaHost, settingsRef.current.editModel, instruction, text),
     report: (status, error) => {

@@ -7,6 +7,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(ollama::ChartRequests::default())
+        .manage(ollama::CompletionRequests::default())
         .invoke_handler(tauri::generate_handler![
             vault::default_vault_dir,
             vault::list_notes,
@@ -19,6 +20,7 @@ pub fn run() {
             vault::read_asset,
             ollama::list_models,
             ollama::complete_line,
+            ollama::cancel_completion,
             ollama::edit_selection,
             ollama::format_note,
             ollama::visualize_selection,

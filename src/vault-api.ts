@@ -5,6 +5,7 @@ import { WELCOME_NOTE, countLines, titleFrom, type NoteFile } from "./notes";
 import { FORMAT_SYSTEM, cleanFormattedNote, validateFormatInput } from "./formatting";
 import visualizePrompt from "./visualize/prompt.txt?raw";
 import { parseRecipe, validateIdea, type ChartRecipe } from "./visualize/recipe";
+import { completionRequest, readCompletionStream } from "./editor/completion-stream";
 
 export type CompletionResult = {
   text: string;
@@ -160,9 +161,26 @@ export async function listModels(host: string): Promise<string[]> {
   return invoke<string[]>("list_models", { host });
 }
 
-export async function completeLine(host: string, model: string, line: string): Promise<CompletionResult> {
-  if (!isTauri()) return completeOverHttp(host, model, line);
-  return invoke<CompletionResult>("complete_line", { host, model, line });
+export async function completeLine(host: string, model: string, line: string, signal?: AbortSignal, onProgress?: (text: string) => void): Promise<CompletionResult> {
+  signal?.throwIfAborted();
+  if (!isTauri()) return completeOverHttp(host, model, line, signal, onProgress);
+  const requestId = crypto.randomUUID();
+  const cancel = () => { void invoke("cancel_completion", { requestId }).catch(() => {}); };
+  let active = true;
+  const onEvent = new Channel<{ text?: string; started?: boolean }>();
+  onEvent.onmessage = (event) => {
+    if (!active) return;
+    // Cancellation may have arrived before Rust registered the request.
+    if (signal?.aborted) { if (event.started) cancel(); return; }
+    if (event.text) onProgress?.(event.text);
+  };
+  signal?.addEventListener("abort", cancel, { once: true });
+  try {
+    const result = await invoke<CompletionResult>("complete_line", { host, model, line, requestId, onEvent });
+    signal?.throwIfAborted();
+    return result;
+  } catch (error) { signal?.throwIfAborted(); throw error; }
+  finally { active = false; signal?.removeEventListener("abort", cancel); }
 }
 
 const EDIT_SYSTEM =
@@ -323,25 +341,14 @@ async function editOverHttp(host: string, model: string, instruction: string, te
   return content;
 }
 
-async function completeOverHttp(host: string, model: string, line: string): Promise<CompletionResult> {
-  const response = await fetch(`${host.replace(/\/$/, "")}/api/generate`, {
+async function completeOverHttp(host: string, model: string, line: string, signal?: AbortSignal, onProgress?: (text: string) => void): Promise<CompletionResult> {
+  const timeout = AbortSignal.timeout(30_000);
+  const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const response = await fetch(`${host.trim().replace(/\/+$/, "")}/api/generate`, {
     method: "POST",
-    signal: AbortSignal.timeout(8000),
+    signal: combined,
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      model,
-      prompt: line,
-      stream: false,
-      raw: true,
-      think: false,
-      keep_alive: "30m",
-      options: { num_predict: 16, temperature: 0.2, top_p: 0.9, repeat_penalty: 1.08 },
-    }),
+    body: JSON.stringify(completionRequest(model, line)),
   });
-  const body = (await response.json()) as { response?: string; done_reason?: string; error?: string };
-  if (!response.ok || body.error) throw new Error(body.error || "Ollama request failed");
-  return {
-    text: body.response ?? "",
-    truncated: body.done_reason === "length",
-  };
+  return readCompletionStream(response, combined, onProgress);
 }
