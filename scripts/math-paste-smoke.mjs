@@ -92,6 +92,25 @@ try {
   await paste(source, fixture);
   await mode.click();
   await page.locator("h1").click();
+  // Closing inline math must leave the caret outside its source, so typing
+  // ordinary text and another formula cannot corrupt the first formula.
+  await editor.click();
+  await page.keyboard.press("Control+a");
+  await paste(editor, "# Inline QA\n\nBefore.");
+  await editor.locator("p").click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("$C_1,C_2=40dbm$ = $ 40_1 dbfs $", { delay: 2 });
+  assert.equal(await page.locator(".math-inline .katex").count(), 2);
+  assert.equal(await page.locator(".math-inline.math-editing").count(), 0);
+  assert.equal(await page.locator(".math-invalid").count(), 0);
+  assert.deepEqual(await page.locator(".math-inline .math-source").allTextContents(), ["$C_1,C_2=40dbm$", "$ 40_1 dbfs $"]);
+  await page.locator(".math-inline .math-rendered").nth(1).click();
+  assert.equal(await page.locator(".math-inline.math-editing").count(), 1);
+  await page.locator("h1").click();
+  await page.waitForFunction(() => !document.querySelector(".math-inline.math-editing"));
+  assert.equal(await page.locator(".math-inline.math-editing").count(), 0);
+  console.log("PASS: two typed inline formulas render independently; click editing still works");
   assert.deepEqual(errors, []);
   await mkdir(screenshotDir, { recursive: true });
   await page.screenshot({ path: resolve(screenshotDir, "converted-math.png") });
