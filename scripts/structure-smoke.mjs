@@ -106,6 +106,7 @@ try {
     assert.equal(await disk(), original);
   }
 
+  console.log('PASS: exact source/rich Apply, Undo, Redo and both generative editors');
   await setMode('delayed'); await open(); await generate();
   await page.waitForFunction(() => Boolean(window.structureTest.release));
   const cancellationBefore = await callCount('cancel_format_request');
@@ -131,13 +132,24 @@ try {
   assert.equal(await dialog.getByRole('button', { name: 'Apply formatting' }).isDisabled(), true);
   await discard(); await source.click(); await page.keyboard.press('Control+z'); await savedBytes(original); assert.equal(await disk(), original);
 
+  // Read-back verification must detect a storage layer that changes protected content.
+  await open(); await generate(); await preview();
+  await page.evaluate(() => { window.structureTest.corruptSave = true; });
+  await dialog.getByRole('button', { name: 'Apply formatting', exact: true }).click();
+  await dialog.getByRole('alert').filter({ hasText: /Structure invariant: original content changed/ }).waitFor();
+  assert.equal(await dialog.getByRole('button', { name: 'Apply formatting' }).isDisabled(), true);
+  assert.ok((await disk()).includes('5001'));
+  await page.evaluate(() => { window.structureTest.corruptSave = false; });
+  await discard(); await source.click(); await page.keyboard.press('Control+z'); await savedBytes(original);
+
+  console.log('PASS: cancellation, late replies, distinct errors and content invalidation');
   // Pending results must not survive note changes (including a late native reply).
   await setMode('delayed'); await open(); await generate(); await page.waitForFunction(() => Boolean(window.structureTest.release));
   await page.evaluate(() => [...document.querySelectorAll('[data-slot=sidebar-item-button]')].find(x => x.textContent.includes('Beta')).click());
   await dialog.getByRole('heading', { name: 'The note changed', exact: true }).waitFor();
   await page.evaluate(() => { window.structureTest.release(); window.structureTest.release = null; });
   await discard(); assert.equal(await disk(), original);
-  await page.locator('[data-slot=sidebar-item-button]').filter({ hasText: 'Alpha' }).click(); await source.waitFor();
+  await page.locator('[data-slot=sidebar-item-button]').filter({ hasText: 'Existing' }).click(); await source.waitFor();
 
   // A pending result also cannot cross vaults.
   await open(); await generate(); await page.waitForFunction(() => Boolean(window.structureTest.release));
@@ -151,7 +163,7 @@ try {
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('notes-settings')).vault), 'Other');
   assert.equal(await page.evaluate(() => window.structureTest.files.get('Other:c.md').includes('Gamma')), true);
   assert.deepEqual(errors, []);
-  await writeFile(resolve(artifacts, 'checks.json'), JSON.stringify({ passed: true, checks: ['explicit mode before requests', 'synthetic preflight', 'remote address visible', 'protected context omitted', 'source Apply/Discard/Undo/read-back', 'rich Apply/Undo/Redo', 'both generative editors', 'native cancellation and late reply', 'distinct endpoint/model/invalid errors', 'content/note/vault invalidation', 'CRLF/Unicode/YAML/math/code/links/table preservation'], errors }, null, 2));
+  await writeFile(resolve(artifacts, 'checks.json'), JSON.stringify({ passed: true, checks: ['explicit mode before requests', 'synthetic preflight', 'remote address visible', 'protected context omitted', 'source Apply/Discard/Undo/read-back', 'rich Apply/Undo/Redo', 'both generative editors', 'native cancellation and late reply', 'distinct endpoint/model/invalid errors', 'content/note/vault invalidation', 'corrupt storage detection', 'CRLF/Unicode/YAML/math/code/links/table preservation'], errors }, null, 2));
   console.log('PASS: both formatting modes, exact source/disk preservation, Apply/Discard/Undo/Redo, native cancellation, late responses and content/note/vault invalidation');
-} catch (error) { await page.screenshot({ path: resolve(artifacts, 'failure.png') }); console.error(errors); console.error(await dialog.innerText().catch(() => 'no dialog')); throw error; }
+} catch (error) { await page.screenshot({ path: resolve(artifacts, 'failure.png') }); console.error(errors); console.error(await dialog.count() ? await dialog.innerText() : 'no dialog');console.error(await disk()); throw error; }
 finally { await browser.close(); }

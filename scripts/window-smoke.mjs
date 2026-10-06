@@ -118,6 +118,12 @@ try {
   await opacity.fill("0.4");
   assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue("--syntax-opacity")), "0.4");
   await page.screenshot({ path: resolve(artifacts, "appearance-settings.png") });
+  await page.getByRole("button", { name: "Back to notes", exact: true }).first().click();
+  await rich.waitFor();
+  assert.equal(await rich.locator("h1").evaluate(el => getComputedStyle(el, "::before").opacity), "0.4");
+  await page.getByRole("button", { name: "Markdown source", exact: true }).click();
+  await page.locator(".source-canvas .cm-markdown-syntax").first().waitFor();
+  assert.equal(await page.locator(".source-canvas .cm-markdown-syntax").first().evaluate(el => getComputedStyle(el).opacity), "0.4");
   assert.deepEqual(errors, []);
   console.log("PASS: removed frosted glass, opaque surfaces and marker opacity setting");
 } catch (error) { await page.screenshot({ path: resolve(artifacts, "failure.png") }); throw error; }

@@ -115,7 +115,7 @@ export function FormatDialog({ snapshot, host, model, decisionModel, valid, onCl
       </div>
       <footer className="format-actions">
         <p role="status" aria-live="polite" className={error && result ? "footer-error" : ""}>
-          {error || (unchanged ? "No changes proposed." : "Ctrl+Z undoes the whole operation.")}</p>
+          {error && result ? error : unchanged ? "No changes proposed." : "Ctrl+Z undoes the whole operation."}</p>
         <button type="button" disabled={applying} onClick={onClose}>{busy ? "Cancel" : "Discard"}</button>
         <button type="button" className="format-primary" disabled={!valid || !result || busy || applying || unchanged} onClick={() => {
           if (!result) return;

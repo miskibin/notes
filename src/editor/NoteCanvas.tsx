@@ -1,9 +1,9 @@
 import type { MilkdownPlugin } from "@milkdown/ctx";
 import { editorViewCtx, editorViewOptionsCtx, parserCtx } from "@milkdown/kit/core";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
-import { getMarkdown } from "@milkdown/kit/utils";
+import { getMarkdown, $prose } from "@milkdown/kit/utils";
 import { closeHistory } from "@milkdown/kit/prose/history";
-import { AllSelection, NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
+import { AllSelection, NodeSelection, TextSelection, Plugin } from "@milkdown/kit/prose/state";
 import { CrepeBuilder } from "@milkdown/crepe/builder";
 import { blockEdit } from "@milkdown/crepe/feature/block-edit";
 import { cursor } from "@milkdown/crepe/feature/cursor";
@@ -118,6 +118,15 @@ export function NoteCanvas({
       sources.push({ doc, source });
       if (sources.length > 8) sources.shift();
     };
+    // Milkdown's Markdown listener is debounced. An immediate Undo can return to
+    // its previous doc before it emits, leaving the applied source in autosave.
+    // Emit exact remembered boundaries synchronously; ordinary typing still uses
+    // the existing listener and autocomplete behavior.
+    crepe.editor.use($prose(() => new Plugin({ view: () => ({ update(view, previous) {
+      if (!ready || cancelled || view.state.doc.eq(previous.doc)) return;
+      const exact = [...sources].reverse().find(item => item.doc.eq(view.state.doc));
+      if (exact) onChangeRef.current(exact.source);
+    } }) })));
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, next, prev) => {
         if (!ready || cancelled || next === prev) return;

@@ -307,7 +307,7 @@ body,
   min-width: 1.25em;
   color: var(--muted-foreground);
 }
-.note-canvas .milkdown .milkdown-list-item-block li .label-wrapper .label { opacity: 0.75; }
+.note-canvas .milkdown .milkdown-list-item-block li .label-wrapper .label { opacity: var(--syntax-opacity, 0.55); }
 
 /* Formatting hints stay visible and muted in the formatted editor. The full
    editable Markdown is also available through the source switch. */
@@ -318,7 +318,7 @@ body,
 .note-canvas .ProseMirror :not(pre) > code::after {
   color: var(--muted-foreground);
   font: 400 0.85em var(--font-sans-stack, "Segoe UI", sans-serif);
-  opacity: 0.75;
+  opacity: var(--syntax-opacity, 0.55);
   text-decoration: none;
   pointer-events: none;
   user-select: none;
