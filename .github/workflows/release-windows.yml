@@ -43,13 +43,15 @@ jobs:
           releaseBody: |
             Windows x64 installer: download the file ending in `-setup.exe`.
 
-            - Minimal history and reference dialogs.
-            - Visualize: Python charts inserted as PNGs, a compact right activity pane, live model output and bounded error repair.
-            - Correct Ollama timeout reporting, streaming and native cancellation.
-            - Reachable window controls and restored full-height titlebar dragging.
-            - Experimental Windows frosted glass, disabled by default in Settings → Appearance.
+            - Structure only: local System One decisions add Markdown markers without rewriting note content; review the preview before Apply.
+            - Independent decision model setting, source-preserving Apply/Undo and native request cancellation.
+            - Simpler Settings, configurable Markdown marker opacity (default 55%), and removed frosted-glass experiment.
+            - New Notes logo included in the application, taskbar icon, installer and browser favicon.
+            - Includes the formula editing and streamed autocomplete fixes merged since 0.1.1.
 
-            Configure local Ollama models in Settings → Notes. The installer includes the scientific Python runtime. This build is unsigned.
+            Structure only requires Ollama >= 0.35 and compatible GGUF weights. Install manually: `ollama pull tev1:0.8b-q8_0` (alternative: `tev1:4b-q4_K_M`). Real model quality has not been benchmarked; the 0.8B model is a candidate, not a validated recommendation.
+
+            Configure local Ollama models in Settings → Notes. No model weights are bundled. The installer includes the scientific Python runtime. This build is unsigned.
       - name: Add checksum and publish completed release
         shell: pwsh
         env:
@@ -67,7 +69,15 @@ jobs:
           $release = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Could not verify staged release.' }
           if ($installer.Name -notin $release.assets.name) { throw 'Installer upload is missing.' }
-          gh release upload $tag SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Checksum upload failed.' }
+          Copy-Item 'public/logo.png' Notes-logo.png
+          $logoHash = (Get-FileHash Notes-logo.png -Algorithm SHA256).Hash.ToLower()
+          "$logoHash  Notes-logo.png" | Add-Content SHA256SUMS.txt -Encoding ascii
+          gh release upload $tag SHA256SUMS.txt Notes-logo.png --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Logo/checksum upload failed.' }
+          $completed = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not verify completed release.' }
+          foreach ($required in @($installer.Name, 'Notes-logo.png', 'SHA256SUMS.txt')) {
+            if ($required -notin $completed.assets.name) { throw "Missing release asset: $required" }
+          }
           gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }

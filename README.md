@@ -1,8 +1,10 @@
 # Notes
 
+<img src="public/logo.png" alt="Notes logo" width="96" height="96">
+
 A local Markdown notebook built with Tauri and React. Notes are `.md` files in your chosen folder, with live preview, LaTeX math and embedded charts.
 
-Download the [Windows x64 installer](https://github.com/miskibin/notes/releases/latest). Releases include the scientific Python runtime and a SHA-256 checksum. Local Ollama models are configured separately in Settings → Notes.
+Download the [Windows x64 installer](https://github.com/miskibin/notes/releases/latest). Releases include the scientific Python runtime, the new Notes logo and a SHA-256 checksum. The same logo is embedded in the application and Windows installer. Local Ollama models are configured separately in Settings → Notes.
 
 ## Writing tools
 
@@ -118,4 +120,4 @@ node scripts/redesign-smoke.mjs
 
 `workspace-smoke.mjs` verifies references, stable note links and backlinks, YAML preservation, search selection, history restoration and folder isolation with a delayed in-memory Tauri bridge.
 
-`window-smoke.mjs` checks window-control hit targets during transitions, all four modal top layers and context menus. It also exercises interrupted capture in an isolated resize-rail harness and the Windows effect bridge, including opaque fallback. Native commands are mocked; actual Acrylic and interaction with other Windows applications require desktop verification.
+`window-smoke.mjs` checks window-control hit targets during transitions, all four modal top layers and context menus. It also exercises interrupted capture in an isolated resize-rail harness, verifies that frosted glass is absent from Settings, and checks marker opacity in both editors. Native commands are mocked; interaction with other Windows applications requires desktop verification.
