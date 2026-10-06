@@ -112,18 +112,19 @@ try {
   console.log("PASS: resize capture releases on blur, Escape and lost pointer capture");
   await page.locator("[data-slot=chat-sidebar-panel]").getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Appearance", exact: true }).click();
-  const glass = page.getByRole("switch", { name: "Frosted glass", exact: true });
-  assert.equal(await glass.getAttribute("aria-checked"), "false");
-  await glass.click(); await page.waitForFunction(() => document.documentElement.dataset.frostedGlass === "true");
-  assert.equal(await page.evaluate(() => window.windowTest.calls.find(call => call.command.endsWith("set_effects")).args.value.effects[0]), "acrylic");
-  await glass.click(); await page.waitForFunction(() => document.documentElement.dataset.frostedGlass === "false");
-  await page.waitForFunction(() => window.windowTest.calls.at(-1)?.command.endsWith("set_shadow") && window.windowTest.calls.at(-1)?.args.value === true);
-  await page.evaluate(() => { window.windowTest.effectError = true; }); await glass.click();
-  await page.getByText(/Frosted glass unavailable: Effect unavailable/).waitFor();
-  assert.equal(await page.evaluate(() => document.documentElement.dataset.frostedGlass), "false");
-  assert.notEqual(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor), "rgba(0, 0, 0, 0)");
-  await page.screenshot({ path: resolve(artifacts, "glass-settings.png") });
+  assert.equal(await page.getByRole("switch", { name: "Frosted glass", exact: true }).count(), 0);
+  assert.equal(await page.evaluate(() => window.windowTest.calls.some(call => call.command.endsWith("set_effects"))), false);
+  const opacity = page.getByLabel("Markdown markers", { exact: true });
+  await opacity.fill("0.4");
+  assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue("--syntax-opacity")), "0.4");
+  await page.screenshot({ path: resolve(artifacts, "appearance-settings.png") });
+  await page.getByRole("button", { name: "Back to notes", exact: true }).first().click();
+  await rich.waitFor();
+  assert.equal(await rich.locator("h1").evaluate(el => getComputedStyle(el, "::before").opacity), "0.4");
+  await page.getByRole("button", { name: "Markdown source", exact: true }).click();
+  await page.locator(".source-canvas .cm-markdown-syntax").first().waitFor();
+  assert.equal(await page.locator(".source-canvas .cm-markdown-syntax").first().evaluate(el => getComputedStyle(el).opacity), "0.4");
   assert.deepEqual(errors, []);
-  console.log("PASS: frosted glass opt-in, native effect bridge, opaque fallback and shadow restoration");
+  console.log("PASS: removed frosted glass, opaque surfaces and marker opacity setting");
 } catch (error) { await page.screenshot({ path: resolve(artifacts, "failure.png") }); throw error; }
 finally { await browser.close(); }

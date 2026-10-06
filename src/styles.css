@@ -307,7 +307,7 @@ body,
   min-width: 1.25em;
   color: var(--muted-foreground);
 }
-.note-canvas .milkdown .milkdown-list-item-block li .label-wrapper .label { opacity: 0.75; }
+.note-canvas .milkdown .milkdown-list-item-block li .label-wrapper .label { opacity: var(--syntax-opacity, 0.55); }
 
 /* Formatting hints stay visible and muted in the formatted editor. The full
    editable Markdown is also available through the source switch. */
@@ -318,7 +318,7 @@ body,
 .note-canvas .ProseMirror :not(pre) > code::after {
   color: var(--muted-foreground);
   font: 400 0.85em var(--font-sans-stack, "Segoe UI", sans-serif);
-  opacity: 0.75;
+  opacity: var(--syntax-opacity, 0.55);
   text-decoration: none;
   pointer-events: none;
   user-select: none;
@@ -478,7 +478,7 @@ body,
 .note-canvas .math-block .math-preview { display: inline-flex; align-items: center; gap: 0.5em; max-width: 100%; }
 .note-canvas .math-block.math-editing > .math-preview { display: none; }
 .note-canvas .math-block .math-rendered { flex: none; min-width: 0; }
-.note-canvas .markdown-syntax { color: var(--muted-foreground); font-weight: 400; opacity: 0.75; }
+.note-canvas .markdown-syntax { color: var(--muted-foreground); font-weight: 400; opacity: var(--syntax-opacity, 0.55); }
 .note-canvas .math-rendered { cursor: text; }
 .note-canvas .math-block { margin: 0.75em 0; line-height: 1.5; }
 .note-canvas .math-block .math-rendered { overflow: visible; }
@@ -531,7 +531,7 @@ body,
 }
 .source-canvas .cm-content { min-height: 60vh; padding: 0; caret-color: var(--foreground); }
 .source-canvas .cm-line { padding: 0; }
-.source-canvas .cm-markdown-syntax { color: var(--muted-foreground) !important; opacity: 0.75; }
+.source-canvas .cm-markdown-syntax { color: var(--muted-foreground) !important; opacity: var(--syntax-opacity, 0.55); }
 .source-canvas .cm-selectionBackground,
 .source-canvas .cm-focused .cm-selectionBackground { background: var(--accent); }
 .source-canvas .cm-cursor { border-left-color: var(--foreground); }
@@ -1011,3 +1011,8 @@ html[data-frosted-glass=true] .visualize-panel { background: color-mix(in oklch,
 .visualize-heading { margin: 0 0 16px; color: var(--foreground); font-size: 12px; font-weight: 500; }
 
 .window-dialog-drag { position: fixed; inset: 0 132px auto 0; height: var(--toolbar-height); }
+
+.format-destination { margin: 0; padding: 8px 24px; font-size: 12px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.format-changes { padding: 12px 24px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.format-changes ul { max-height: 150px; overflow: auto; padding-left: 20px; }
+.format-changes code { color: var(--primary); white-space: pre; }

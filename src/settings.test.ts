@@ -13,6 +13,8 @@ describe("settings", () => {
     expect(settings.vault).toBe("C:/notes");
     expect(settings.model).toBe("qwen");
     expect(settings.editModel).toBe("gemma");
+    expect(settings.decisionModel).toBe("tev1:0.8b-q8_0");
+    expect(settings.syntaxOpacity).toBe(0.55);
     expect(settings.autocomplete).toBe(true);
     expect(settings.colorMode).toBe("dark");
     expect(settings.palette).toBe("ink");
@@ -20,6 +22,16 @@ describe("settings", () => {
     expect(settings.contentWidth).toBe("comfortable");
     expect(settings.textZoom).toBe(1);
     expect(settings.appearanceRev).toBe(2);
+  });
+
+  it("keeps independent decision settings and clamps marker opacity", () => {
+    const settings = normalizeSettings({ model: "complete", editModel: "edit", decisionModel: "tev1:4b-q4_K_M", syntaxOpacity: 0.4, frostedGlass: true });
+    expect(settings.decisionModel).toBe("tev1:4b-q4_K_M");
+    expect(settings.model).toBe("complete"); expect(settings.editModel).toBe("edit");
+    expect(settings.syntaxOpacity).toBe(0.4); expect(settings.frostedGlass).toBe(false);
+    expect(normalizeSettings({ syntaxOpacity: NaN }).syntaxOpacity).toBe(0.55);
+    expect(normalizeSettings({ syntaxOpacity: 3 }).syntaxOpacity).toBe(1);
+    expect(normalizeSettings({ syntaxOpacity: -1 }).syntaxOpacity).toBe(0.15);
   });
 
   it("moves an old full-width system save onto the centered Roboto default once", () => {

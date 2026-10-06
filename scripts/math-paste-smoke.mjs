@@ -42,7 +42,7 @@ try {
   assert.doesNotMatch(await editor.innerText(), /Wrong clipboard/);
   for (const selector of ["h1::before", "strong::before", ".math-fence"]) {
     const [element, pseudo] = selector.split("::");
-    assert.equal(await page.locator(element).first().evaluate((el, p) => getComputedStyle(el, p ? `::${p}` : null).opacity, pseudo), "0.75");
+    assert.equal(await page.locator(element).first().evaluate((el, p) => getComputedStyle(el, p ? `::${p}` : null).opacity, pseudo), "0.55");
   }
   await page.keyboard.press("Control+z");
   assert.match(await editor.innerText(), /Previous content/);
@@ -57,7 +57,7 @@ try {
   assert.equal((converted.match(/\$\$/g) || []).length, 4);
   assert.match(converted, /\$G=A-B\$/);
   assert.doesNotMatch(converted, /\\\\\[/);
-  assert.equal(await page.locator(".cm-markdown-syntax").first().evaluate((el) => getComputedStyle(el).opacity), "0.75");
+  assert.equal(await page.locator(".cm-markdown-syntax").first().evaluate((el) => getComputedStyle(el).opacity), "0.55");
   await page.keyboard.press("Control+z");
   assert.match(await source.innerText(), /Previous content/);
   await page.keyboard.press("Control+Shift+z");
