@@ -44,7 +44,12 @@ const editor = page.locator('.note-scroll .ProseMirror[contenteditable="true"]')
 const dialog = page.getByRole("dialog", { name: "Format Markdown", exact: true });
 const formatButton = footer.getByRole("button", { name: "Format Markdown", exact: true });
 const save = () => page.waitForFunction(() => document.querySelector(".footer-save")?.textContent === "Saved");
-async function openFormat() { await formatButton.click(); await dialog.waitFor(); }
+async function openFormat() {
+  await formatButton.click(); await dialog.waitFor();
+  await dialog.getByRole("button", { name: "Generative", exact: true }).click();
+  const generate = dialog.getByRole("button", { name: "Generate preview", exact: true });
+  if (await generate.count()) await generate.click();
+}
 async function closeFormat() { await dialog.getByRole("button", { name: "Close formatting preview" }).click(); await dialog.waitFor({ state: "hidden" }); }
 
 try {

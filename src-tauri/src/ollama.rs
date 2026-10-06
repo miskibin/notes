@@ -354,8 +354,7 @@ fn chart_line(line: &[u8], content: &mut String, done: &mut bool) -> Result<(), 
     Ok(())
 }
 
-#[tauri::command]
-pub async fn format_note(host: String, model: String, text: String) -> Result<String, String> {
+async fn generate_format(host: String, model: String, text: String) -> Result<String, String> {
     let host = normalize_host(&host)?;
     let model = normalize_model(&model)?;
     let budget = format_budget(&text)?;
@@ -402,6 +401,100 @@ pub async fn format_note(host: String, model: String, text: String) -> Result<St
 fn predict_budget(text: &str) -> u32 {
     let chars = text.chars().count() as u32;
     chars.div_ceil(3).saturating_add(64).clamp(192, 4096)
+}
+
+#[derive(Default)]
+pub struct FormatRequests(Mutex<HashMap<String, oneshot::Sender<()>>>);
+
+#[derive(Clone, Serialize)]
+pub struct FormatEvent { started: bool }
+
+#[derive(Serialize)]
+pub struct SystemOneResponse { status: u16, body: String }
+
+#[tauri::command]
+pub fn cancel_format_request(request_id: String, requests: State<'_, FormatRequests>) {
+    if let Ok(mut active) = requests.inner().0.lock() {
+        if let Some(cancel) = active.remove(&request_id) { let _ = cancel.send(()); }
+    }
+}
+
+async fn cancellable_format<T: Send + 'static>(
+    request_id: String, on_event: Channel<FormatEvent>, requests: State<'_, FormatRequests>,
+    future: impl std::future::Future<Output = Result<T, String>> + Send + 'static,
+) -> Result<T, String> {
+    if request_id.is_empty() || request_id.len() > 128 { return Err("Invalid format request id.".into()); }
+    let (cancel, cancelled) = oneshot::channel();
+    {
+        let mut active = requests.inner().0.lock().map_err(|_| "Format request lock failed.")?;
+        if !active.is_empty() { return Err("A format request is already active.".into()); }
+        active.insert(request_id.clone(), cancel);
+    }
+    let result = if on_event.send(FormatEvent { started: true }).is_err() {
+        Err("Format dialog closed.".into())
+    } else {
+        let task = tokio::spawn(future);
+        let abort = task.abort_handle();
+        let cancellation = tokio::spawn(async move { let _ = cancelled.await; abort.abort(); });
+        let result = match task.await {
+            Ok(result) => result,
+            Err(error) if error.is_cancelled() => Err("Formatting cancelled.".into()),
+            Err(error) => Err(format!("Format request failed: {error}")),
+        };
+        cancellation.abort();
+        result
+    };
+    if let Ok(mut active) = requests.inner().0.lock() { active.remove(&request_id); }
+    result
+}
+
+#[tauri::command]
+pub async fn format_note(
+    host: String, model: String, text: String, request_id: String,
+    on_event: Channel<FormatEvent>, requests: State<'_, FormatRequests>,
+) -> Result<String, String> {
+    cancellable_format(request_id, on_event, requests, generate_format(host, model, text)).await
+}
+
+fn validate_system_one(body: &serde_json::Value) -> Result<(), String> {
+    let object = body.as_object().ok_or("invalid_response: Invalid System One request.")?;
+    if object.keys().any(|key| !matches!(key.as_str(), "model" | "state" | "questions" | "keep_alive")) {
+        return Err("invalid_response: Unsupported System One request field.".into());
+    }
+    let model = body["model"].as_str().ok_or("Choose a decision model.")?;
+    normalize_model(model)?;
+    if model.contains("cloud") || model.contains("mlx") { return Err("incompatible_model: Use a local GGUF decision model.".into()); }
+    if body.get("state").is_none() || !body["questions"].is_object() { return Err("invalid_response: Invalid System One state or questions.".into()); }
+    if serde_json::to_vec(body).map_err(|_| "Invalid request.")?.len() > 1800 { return Err("context: Structure request exceeds the short-context budget.".into()); }
+    Ok(())
+}
+
+async fn post_system_one(host: String, body: serde_json::Value) -> Result<SystemOneResponse, String> {
+    let host = normalize_host(&host)?;
+    validate_system_one(&body)?;
+    // Never silently forward note data to another host through an HTTP redirect.
+    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    let client = CLIENT.get_or_init(|| reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none()).connect_timeout(Duration::from_secs(5))
+        .build().map_err(|error| error.to_string())).clone()?;
+    let mut response = client.post(format!("{host}/v1/systemone"))
+        .timeout(Duration::from_secs(60)).json(&body).send().await.map_err(map_err)?;
+    let status = response.status().as_u16();
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(map_err)? {
+        if bytes.len() + chunk.len() > 65_536 { return Err("invalid_response: Oversized System One response.".into()); }
+        bytes.extend_from_slice(&chunk);
+    }
+    let body = String::from_utf8(bytes).map_err(|_| "invalid_response: Invalid System One UTF-8.")?;
+    Ok(SystemOneResponse { status, body })
+}
+
+#[tauri::command]
+pub async fn system_one(
+    host: String, body: serde_json::Value, request_id: String,
+    on_event: Channel<FormatEvent>, requests: State<'_, FormatRequests>,
+) -> Result<SystemOneResponse, String> {
+    cancellable_format(request_id, on_event, requests, post_system_one(host, body)).await
 }
 
 fn edit_prompt(instruction: &str, text: &str) -> Result<String, String> {
@@ -487,7 +580,25 @@ pub async fn edit_selection(
 
 #[cfg(test)]
 mod tests {
-    use super::{chart_line, completion_line, completion_request, Completion, edit_prompt, format_budget, predict_budget};
+    use super::{chart_line, completion_line, completion_request, Completion, edit_prompt, format_budget, predict_budget, validate_system_one};
+
+    #[test]
+    fn system_one_accepts_only_short_local_decision_contracts() {
+        let valid = serde_json::json!({ "model": "tev1:0.8b-q8_0", "state": "Synthetic data.", "questions": {
+            "structure": { "type": "choice", "instructions": "Classify.", "criteria": { "keep": "Prose.", "heading_2": "Section." } }
+        }, "keep_alive": "5m" });
+        assert!(validate_system_one(&valid).is_ok());
+        for field in ["temperature", "think", "num_predict", "messages", "options"] {
+            let mut invalid = valid.clone(); invalid[field] = serde_json::json!(1);
+            assert!(validate_system_one(&invalid).is_err());
+        }
+        for model in ["tev1:4b-cloud", "tev1:4b-mlx-bf16"] {
+            let mut invalid = valid.clone(); invalid["model"] = serde_json::json!(model);
+            assert!(validate_system_one(&invalid).unwrap_err().contains("incompatible_model"));
+        }
+        let mut oversized = valid.clone(); oversized["state"] = serde_json::json!("ą".repeat(1800));
+        assert!(validate_system_one(&oversized).unwrap_err().contains("context:"));
+    }
 
     #[test]
     fn completion_stream_preserves_text_and_truncation() {

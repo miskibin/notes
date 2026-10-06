@@ -3,9 +3,9 @@ import { createGlassController } from "./window-glass";
 import { normalizeSettings } from "./settings";
 
 describe("experimental frosted glass", () => {
-  it("defaults to opaque and needs explicit opt-in", () => {
+  it("migrates the removed experiment to opaque", () => {
     expect(normalizeSettings({}).frostedGlass).toBe(false);
-    expect(normalizeSettings({ frostedGlass: true }).frostedGlass).toBe(true);
+    expect(normalizeSettings({ frostedGlass: true }).frostedGlass).toBe(false);
     expect(normalizeSettings({ frostedGlass: "true" as unknown as boolean }).frostedGlass).toBe(false);
   });
   it("does not call native effects for the default mode", async () => {

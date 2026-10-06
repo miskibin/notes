@@ -1,12 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useWindowGlass } from "./window-glass";
 import { WindowControls } from "./WindowControls";
 import { AppHeader } from "./AppHeader";
 import { AppFooter } from "./AppFooter";
 import { FormatDialog } from "./FormatDialog";
-import { canApplyFormat, validateFormatInput, type FormatSnapshot } from "./formatting";
+import { canApplyFormat, type FormatSnapshot } from "./formatting";
+import { verifyStructurePatch, type StructurePatch } from "./structure";
 import { applyAppearance, stepTextZoom } from "./appearance";
 import { NoteCanvas } from "./editor/NoteCanvas";
 import { SourceCanvas } from "./editor/SourceCanvas";
@@ -56,7 +56,6 @@ const VisualizeRun = lazy(() => import("./visualize/VisualizeRun"));
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => readSettings());
-  const glassStatus = useWindowGlass(settings.frostedGlass, settings.colorMode);
   const [screen, setScreen] = useState<Screen>("notes");
   const [sourceMode, setSourceMode] = useState(false);
   const [notes, setNotes] = useState<NoteFile[]>([]);
@@ -440,12 +439,11 @@ export default function App() {
     openingFormat.current = true;
     try {
       await flush();
-      const original = noteBody(draftRef.current);
+      const original = draftRef.current;
       const snapshot = { note: activeRef.current ?? "", vault: settingsRef.current.vault, original };
-      validateFormatInput(original);
       if (!snapshot.note || !canApplyFormat(snapshot, {
         note: activeRef.current ?? "", vault: settingsRef.current.vault,
-        original: noteBody(draftRef.current),
+        original: draftRef.current,
       })) return;
       setLoadError(null);
       setFormatSession(snapshot);
@@ -455,20 +453,38 @@ export default function App() {
       openingFormat.current = false;
     }
   };
-  const applyFormat = (formatted: string): string | null => {
+  const applyFormat = async (formatted: string, patch?: StructurePatch): Promise<string | null> => {
     const handle = editorHandle.current;
     if (!handle || !formatSession || !canApplyFormat(formatSession, {
-      note: activeRef.current ?? "", vault: settingsRef.current.vault, original: noteBody(readDraft()),
+      note: activeRef.current ?? "", vault: settingsRef.current.vault, original: readDraft(),
     })) return "The note changed while formatting. Discard this preview and format the current version.";
     try {
-      const merged = withNoteBody(draftRef.current, noteBody(formatted));
+      transitionBusy.current = true;
+      setTransitioning(true);
+      if (patch) {
+        if (patch.original !== formatSession.original) throw new Error("Structure snapshot changed.");
+        verifyStructurePatch(patch, formatted);
+      }
+      const merged = formatted;
       if (sourceMode) handle.replaceMarkdown(merged); else handle.replaceMarkdown(noteBody(merged));
+      if (patch) {
+        // Check the actual editor result, then serialized disk bytes, not just the transform.
+        window.clearTimeout(saveTimer.current);
+        verifyStructurePatch(patch, readDraft());
+        await enqueueSave.current(async () => {
+          await writeNote(formatSession.vault, formatSession.note, merged);
+          verifyStructurePatch(patch, await readNote(formatSession.vault, formatSession.note));
+        });
+        savedRef.current = merged;
+        setSaveState("saved");
+      }
       setFormatSession(null);
       setLoadError(null);
       return null;
     } catch (error) {
+      setSaveState("error");
       return errorText(error);
-    }
+    } finally { transitionBusy.current = false; setTransitioning(false); }
   };
   const toggleSource = useCallback(() => {
     const latest = readDraft();
@@ -700,7 +716,6 @@ export default function App() {
         {ready && screen === "settings" ? (
           <SettingsPage
             settings={settings}
-            glassStatus={glassStatus}
             models={models}
             modelError={modelError}
             onChange={persist}
@@ -756,6 +771,7 @@ export default function App() {
         formatting={formatSession !== null || visualBusy || transitioning} onToggle={() => persist({ ...settingsRef.current, autocomplete: !settingsRef.current.autocomplete })}
         onFormat={() => void openFormat()} onRetrySave={() => void flush().catch((error: unknown) => setLoadError(errorText(error)))} />
       {formatSession ? <FormatDialog snapshot={formatSession} host={settings.ollamaHost} model={settings.editModel}
+        decisionModel={settings.decisionModel} valid={canApplyFormat(formatSession, { note: active ?? "", vault: settings.vault, original: markdown })}
         onClose={() => setFormatSession(null)} onApply={applyFormat}
         onSettings={() => { setFormatSession(null); void navigate("settings"); }} /> : null}
       {referenceDialog ? <ReferenceDialog initial={referenceDialog === "new" ? undefined : referenceDialog} onClose={() => setReferenceDialog(null)} onSave={saveReference} onRemove={removeReference} /> : null}

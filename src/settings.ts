@@ -1,10 +1,12 @@
 import { DEFAULT_APPEARANCE, normalizeAppearance, type Appearance } from "./appearance";
+import { DECISION_MODELS } from "./structure";
 
 export type Settings = Appearance & {
   vault: string;
   ollamaHost: string;
   model: string;
   editModel: string;
+  decisionModel: string;
   autocomplete: boolean;
   appearanceRev: 2;
 };
@@ -17,6 +19,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ollamaHost: "http://127.0.0.1:11434",
   model: "",
   editModel: "",
+  decisionModel: DECISION_MODELS[0],
   autocomplete: false,
   appearanceRev: 2,
 };
@@ -41,6 +44,9 @@ export function normalizeSettings(parsed: StoredSettings | null | undefined): Se
         : DEFAULT_SETTINGS.ollamaHost,
     model: typeof parsed?.model === "string" ? parsed.model : "",
     editModel: typeof parsed?.editModel === "string" ? parsed.editModel : "",
+    decisionModel: typeof parsed?.decisionModel === "string" ? parsed.decisionModel : DEFAULT_SETTINGS.decisionModel,
+    // Removed experiment: do not reactivate it for existing installations.
+    frostedGlass: false,
     autocomplete: parsed?.autocomplete === true,
   };
 }

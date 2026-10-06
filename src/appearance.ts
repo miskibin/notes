@@ -87,6 +87,7 @@ export type Appearance = {
   reduceMotion: boolean;
   frostedGlass: boolean;
   textZoom: number;
+  syntaxOpacity: number;
 };
 
 export const DEFAULT_APPEARANCE: Appearance = {
@@ -102,6 +103,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
   reduceMotion: false,
   frostedGlass: false,
   textZoom: 1,
+  syntaxOpacity: 0.55,
 };
 
 type Surface = {
@@ -437,6 +439,8 @@ export function normalizeAppearance(value: Partial<Appearance> | null | undefine
     reduceMotion: value?.reduceMotion === true,
     frostedGlass: value?.frostedGlass === true,
     textZoom: clampTextZoom(value?.textZoom),
+    syntaxOpacity: typeof value?.syntaxOpacity === "number" && Number.isFinite(value.syntaxOpacity)
+      ? Math.min(1, Math.max(0.15, value.syntaxOpacity)) : DEFAULT_APPEARANCE.syntaxOpacity,
   };
 }
 
@@ -506,6 +510,7 @@ export function applyAppearance(appearance: Appearance): void {
   set("--fg", tokens.foreground);
   set("--ui-zoom", String(appearance.textZoom));
   set("--ui-scale", String(appearance.textZoom));
+  set("--syntax-opacity", String(appearance.syntaxOpacity));
   if (appearance.textZoom === 1) delete root.dataset.textZoom;
   else root.dataset.textZoom = "on";
   set("--header", mode === "light" ? `color-mix(in oklch, ${tokens.foreground} 6%, ${tokens.background})` : tokens.background);

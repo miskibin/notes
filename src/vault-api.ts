@@ -6,6 +6,7 @@ import { FORMAT_SYSTEM, cleanFormattedNote, validateFormatInput } from "./format
 import visualizePrompt from "./visualize/prompt.txt?raw";
 import { parseRecipe, validateIdea, type ChartRecipe } from "./visualize/recipe";
 import { completionRequest, readCompletionStream } from "./editor/completion-stream";
+import { createStructureFormatter, byteLength, REQUEST_BYTE_LIMIT, type DecisionTransport } from "./structure";
 
 export type CompletionResult = {
   text: string;
@@ -201,7 +202,7 @@ export async function formatNote(host: string, model: string, text: string, sign
   validateFormatInput(text);
   if (!model.trim()) throw new Error("Choose an edit model in Settings to format notes.");
   if (isTauri()) {
-    return cleanFormattedNote(await invoke<string>("format_note", { host, model, text }));
+    return cleanFormattedNote(await cancellableInvoke<string>("format_note", { host, model, text }, signal ?? new AbortController().signal));
   }
   const response = await fetch(`${host.trim().replace(/\/+$/, "")}/api/chat`, {
     method: "POST",
@@ -221,6 +222,83 @@ export async function formatNote(host: string, model: string, text: string, sign
   if (body.done_reason === "length") throw new Error("The model stopped before finishing. Try a shorter note or another edit model.");
   return cleanFormattedNote(body.message?.content ?? "");
 }
+
+export const SYSTEM_ONE_TIMEOUT_MS = 60_000;
+
+// The started handshake closes the cancellation-before-registration race on desktop.
+async function cancellableInvoke<T>(command: string, args: Record<string, unknown>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  const requestId = crypto.randomUUID();
+  let active = true;
+  const cancel = () => { void invoke("cancel_format_request", { requestId }).catch(() => {}); };
+  const onEvent = new Channel<{ started: boolean }>();
+  onEvent.onmessage = event => { if (active && signal.aborted && event.started) cancel(); };
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    const result = await invoke<T>(command, { ...args, requestId, onEvent });
+    signal.throwIfAborted();
+    return result;
+  } catch (error) { signal.throwIfAborted(); throw error; }
+  finally { active = false; signal.removeEventListener("abort", cancel); }
+}
+
+export function systemOneError(status: number, raw: string, model: string): Error {
+  let detail = raw.slice(0, 280);
+  try { const body = JSON.parse(raw) as { error?: unknown }; if (typeof body.error === "string") detail = body.error.slice(0, 280); } catch { /* old endpoint may return plain text */ }
+  if (/model.*(?:not found|does not exist)|(?:pull|download).*model/i.test(detail)) return new Error(`missing_model: Model ${model} is not installed. Run: ollama pull ${model}`);
+  if (status === 404 || status === 405 || status === 501) return new Error("unsupported_endpoint: System One is unavailable. Install Ollama >= 0.35 and a compatible GGUF decision model.");
+  if (status === 413 || /context|too (?:long|large)|token.*limit/i.test(detail)) return new Error(`context: System One context or request limit exceeded. ${detail}`);
+  if (/incompatible|not supported|unsupported|GGUF|scoring|decision model|system.?one model|runner/i.test(detail)) return new Error(`incompatible_model: Use a System One GGUF model (MLX, Safetensors and cloud models are unsupported). ${detail}`);
+  return new Error(`invalid_response: System One HTTP ${status}. ${detail}`);
+}
+
+export const requestSystemOne: DecisionTransport = async (host, body, signal) => {
+  signal.throwIfAborted();
+  const base = host.trim().replace(/\/+$/, "");
+  const url = new URL(base);
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("Invalid Ollama address. Use an HTTP or HTTPS server address without credentials.");
+  if (!body.model.trim()) throw new Error("Choose a decision model in Settings.");
+  if (body.model.includes("cloud") || body.model.includes("mlx")) throw new Error("incompatible_model: Structure only requires a local GGUF decision model.");
+  if (byteLength(JSON.stringify(body)) > REQUEST_BYTE_LIMIT) throw new Error("context: Structure request exceeds the short-context budget.");
+  const timeout = AbortSignal.timeout(SYSTEM_ONE_TIMEOUT_MS);
+  const combined = AbortSignal.any([signal, timeout]);
+  try {
+    let status: number, raw: string;
+    if (isTauri()) {
+      const response = await cancellableInvoke<{ status: number; body: string }>("system_one", { host: base, body }, combined);
+      status = response.status; raw = response.body;
+    } else {
+      const response = await fetch(`${base}/v1/systemone`, { method: "POST", redirect: "error", signal: combined,
+        headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      status = response.status;
+      // Bound response reads as well as input; never parse an unbounded response.
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("invalid_response: Empty System One response.");
+      const chunks: Uint8Array[] = []; let size = 0;
+      try {
+        while (true) {
+          const chunk = await reader.read(); if (chunk.done) break;
+          size += chunk.value.length;
+          if (size > 65_536) { await reader.cancel(); throw new Error("invalid_response: Oversized System One response."); }
+          chunks.push(chunk.value);
+        }
+      } finally { reader.releaseLock(); }
+      const bytes = new Uint8Array(size); let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      raw = new TextDecoder().decode(bytes);
+    }
+    combined.throwIfAborted();
+    if (status < 200 || status >= 300) throw systemOneError(status, raw, body.model);
+    try { return JSON.parse(raw) as unknown; } catch { throw new Error("invalid_response: System One did not return JSON."); }
+  } catch (error) {
+    signal.throwIfAborted();
+    if (timeout.aborted) throw new Error("timeout: System One exceeded 60 seconds. Try again after loading the model.");
+    if (error instanceof TypeError) throw new Error(`connection: Cannot reach Ollama at ${base}. Check the address and browser CORS settings.`);
+    throw error;
+  }
+};
+
+export const formatStructure = createStructureFormatter(requestSystemOne);
 
 export type ChartRepair = { previousResponse: string; error: string };
 

@@ -8,6 +8,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(ollama::ChartRequests::default())
         .manage(ollama::CompletionRequests::default())
+        .manage(ollama::FormatRequests::default())
         .invoke_handler(tauri::generate_handler![
             vault::default_vault_dir,
             vault::list_notes,
@@ -23,6 +24,8 @@ pub fn run() {
             ollama::cancel_completion,
             ollama::edit_selection,
             ollama::format_note,
+            ollama::system_one,
+            ollama::cancel_format_request,
             ollama::visualize_selection,
             ollama::cancel_visualize,
         ])

@@ -22,6 +22,14 @@ export function SourceCanvas({ noteKey, markdown, onChange, editorHandle }: {
 
   useEffect(() => {
     if (!host.current) return;
+    // CodeMirror Undo reconstructs Text objects, so identity alone cannot preserve CRLF.
+    const sources = new Map<string, string>();
+    const exactSource = (state: EditorState) => sources.get(state.doc.toString()) ?? state.doc.toString();
+    const remember = (state: EditorState, source: string) => {
+      const key = state.doc.toString();
+      sources.delete(key); sources.set(key, source);
+      while (sources.size > 8) sources.delete(sources.keys().next().value!);
+    };
     const view = new EditorView({
       parent: host.current,
       state: EditorState.create({
@@ -38,15 +46,19 @@ export function SourceCanvas({ noteKey, markdown, onChange, editorHandle }: {
             return normalizePastedMath(text, document.slice(0, from), document.slice(to));
           }),
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) changeRef.current(update.state.doc.toString());
+            if (update.docChanged) changeRef.current(exactSource(update.state));
           }),
         ],
       }),
     });
     viewRef.current = view;
-    const handle: EditorHandle = { getMarkdown: () => view.state.doc.toString(), replaceMarkdown: (next: string) => {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next },
+    remember(view.state, markdown);
+    const handle: EditorHandle = { getMarkdown: () => exactSource(view.state), replaceMarkdown: (next: string) => {
+      remember(view.state, exactSource(view.state));
+      const transaction = view.state.update({ changes: { from: 0, to: view.state.doc.length, insert: next },
         annotations: [isolateHistory.of("full"), Transaction.userEvent.of("input.format")] });
+      remember(transaction.state, next);
+      view.dispatch(transaction);
       view.focus();
     },
       getSelection: (includeEmpty = false) => {
@@ -91,7 +103,7 @@ export function SourceCanvas({ noteKey, markdown, onChange, editorHandle }: {
 
   useEffect(() => {
     const view = viewRef.current;
-    if (view && view.state.doc.toString() !== markdown) {
+    if (view && editorHandle.current?.getMarkdown() !== markdown) {
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: markdown } });
     }
   }, [markdown]);

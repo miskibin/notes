@@ -27,6 +27,7 @@ import {
   type Appearance,
 } from "./appearance";
 import type { Settings } from "./settings";
+import { DECISION_MODELS } from "./structure";
 
 type Section = "notes" | "appearance" | "files";
 
@@ -38,7 +39,6 @@ const NAV: { id: Section; label: string; icon: typeof StickyNote }[] = [
 
 export function SettingsPage({
   settings,
-  glassStatus,
   models,
   modelError,
   onChange,
@@ -47,7 +47,6 @@ export function SettingsPage({
   onBack,
 }: {
   settings: Settings;
-  glassStatus?: string | null;
   models: string[];
   modelError: string | null;
   onChange: (settings: Settings) => void;
@@ -63,7 +62,7 @@ export function SettingsPage({
       <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Notes, appearance, and files. Changes apply immediately.</p>
+
         </div>
         <button
           type="button"
@@ -104,7 +103,7 @@ export function SettingsPage({
             <NotesSection settings={settings} models={models} modelError={modelError} onChange={patch} onHostBlur={onHostBlur} />
           ) : null}
           {section === "appearance" ? (
-            <AppearanceSection glassStatus={glassStatus} appearance={settings} onChange={(next) => patch(next)} onReset={() => patch(DEFAULT_APPEARANCE)} />
+            <AppearanceSection appearance={settings} onChange={(next) => patch(next)} onReset={() => patch(DEFAULT_APPEARANCE)} />
           ) : null}
           {section === "files" ? <FilesSection vault={settings.vault} onPickFolder={onPickFolder} /> : null}
         </div>
@@ -128,9 +127,9 @@ function NotesSection({
 }) {
   return (
     <div className="space-y-8">
-      <SectionHeading title="Notes" description="Local editor. Autocomplete stays off until you turn it on." />
-      <Card title="Ollama" description="Address of the local model server. Models are not downloaded from here.">
-        <Field id="ollama-host" label="Address" hint="Used by both autocomplete and the edit chat.">
+
+      <PrefSection title="Ollama">
+        <Field id="ollama-host" label="Address" >
           <input
             id="ollama-host"
             type="url"
@@ -144,16 +143,16 @@ function NotesSection({
           />
         </Field>
         {modelError ? <p className="text-xs text-destructive">{modelError}</p> : null}
-      </Card>
+      </PrefSection>
       <PrefSection title="Autocomplete" description="Ghost text continues the current line. Tab accepts it, Esc dismisses it.">
-        <PrefRow htmlFor="autocomplete" title="Autocomplete" description="Off by default. Does not call the edit model.">
+        <PrefRow htmlFor="autocomplete" title="Autocomplete">
           <Switch
             id="autocomplete"
             checked={settings.autocomplete}
             onChange={(autocomplete) => onChange({ autocomplete })}
           />
         </PrefRow>
-        <PrefRow htmlFor="complete-model" title="Autocomplete model" description="Separate from the model that rewrites a selection.">
+        <PrefRow htmlFor="complete-model" title="Autocomplete model">
           <ModelControl
             id="complete-model"
             models={models}
@@ -162,14 +161,18 @@ function NotesSection({
           />
         </PrefRow>
       </PrefSection>
-      <PrefSection title="Edit & formatting" description="Ctrl+E rewrites selected text. Format in the footer organizes the whole note; Visualize in the context menu creates a chart.">
-        <PrefRow htmlFor="edit-model" title="Edit model" description="Used by editing, Markdown formatting and Visualize. Formatting has a preview; Visualize inserts a PNG into the note. Ctrl+Z undoes the change.">
+      <PrefSection title="Edit & formatting">
+        <PrefRow htmlFor="edit-model" title="Edit model" description="Ctrl+E, generative formatting and Visualize.">
           <ModelControl
             id="edit-model"
             models={models}
             value={settings.editModel}
             onChange={(editModel) => onChange({ editModel })}
           />
+        </PrefRow>
+        <PrefRow htmlFor="decision-model" title="Decision model" description="Structure only · Ollama ≥ 0.35 · GGUF">
+          <ModelControl id="decision-model" models={[...new Set([...DECISION_MODELS, ...models])]} value={settings.decisionModel}
+            onChange={decisionModel => onChange({ decisionModel })} />
         </PrefRow>
       </PrefSection>
     </div>
@@ -178,20 +181,18 @@ function NotesSection({
 
 function AppearanceSection({
   appearance,
-  glassStatus,
   onChange,
   onReset,
 }: {
   appearance: Appearance;
-  glassStatus?: string | null;
   onChange: (next: Partial<Appearance>) => void;
   onReset: () => void;
 }) {
   const mode = resolvedColorMode(appearance.colorMode);
   return (
     <div className="space-y-8">
-      <SectionHeading title="Appearance" description="Theme, type, density, and the note column. Changes apply immediately." />
-      <PrefSection title="Theme" description="Light, dark, or follow the system. Palettes below match this mode.">
+
+      <PrefSection title="Theme">
         <PrefRow title="Color mode">
           <Segmented
             label="Color mode"
@@ -209,7 +210,7 @@ function AppearanceSection({
       <div className="space-y-2.5">
         <div>
           <h3 className="text-sm font-medium tracking-tight">Palette</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">Accent and surface colors. Preview follows the mode above.</p>
+
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {PALETTES.map((palette) => {
@@ -226,7 +227,7 @@ function AppearanceSection({
                   selected ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-foreground/20",
                 )}
               >
-                <span className="flex h-14" aria-hidden>
+                <span className="flex h-7" aria-hidden>
                   <span className="w-[42%]" style={{ backgroundColor: tokens.background }} />
                   <span className="w-[28%]" style={{ backgroundColor: tokens.card }} />
                   <span className="flex-1" style={{ backgroundColor: tokens.primary }} />
@@ -234,7 +235,7 @@ function AppearanceSection({
                 <span className="flex items-center justify-between gap-2 border-t border-border px-2.5 py-2">
                   <span className="min-w-0">
                     <span className="block truncate text-xs font-medium leading-none">{palette.label}</span>
-                    <span className="mt-1 block truncate text-[10px] leading-none text-muted-foreground">{palette.description}</span>
+
                   </span>
                   {selected ? (
                     <CheckCircle2 className="size-3.5 shrink-0 text-primary" strokeWidth={2} />
@@ -248,7 +249,7 @@ function AppearanceSection({
         </div>
       </div>
 
-      <PrefSection title="Type" description="The note font is independent of the monospace used in code.">
+      <PrefSection title="Type">
         <PrefRow htmlFor="ui-font" title="UI font" description="Roboto matches Gerrit. Other faces are used when that font is installed.">
           <SelectControl id="ui-font" value={appearance.font} onChange={(font) => onChange({ font })} options={UI_FONTS} />
         </PrefRow>
@@ -273,7 +274,15 @@ function AppearanceSection({
         </PrefRow>
       </PrefSection>
 
-      <PrefSection title="Layout" description="Width of the note, spacing, and corner radius.">
+      <PrefSection title="Editor">
+        <PrefRow htmlFor="syntax-opacity" title="Markdown markers">
+          <input id="syntax-opacity" type="range" min="0.15" max="1" step="0.05" value={appearance.syntaxOpacity}
+            onChange={event => onChange({ syntaxOpacity: Number(event.target.value) })} />
+          <output htmlFor="syntax-opacity" className="ml-2 text-xs tabular-nums">{Math.round(appearance.syntaxOpacity * 100)}%</output>
+        </PrefRow>
+      </PrefSection>
+
+      <PrefSection title="Layout">
         <PrefRow title="Content width" description="Full uses the window. Narrow and comfortable cap the note column.">
           <Segmented
             label="Content width"
@@ -304,14 +313,7 @@ function AppearanceSection({
         </PrefRow>
       </PrefSection>
 
-      <PrefSection title="Experimental" description="Off by default.">
-        <PrefRow htmlFor="frosted-glass" title="Frosted glass" description="Translucent, blurred surfaces in the Windows desktop app.">
-          <Switch id="frosted-glass" checked={appearance.frostedGlass} onChange={frostedGlass => onChange({ frostedGlass })} />
-        </PrefRow>
-        {glassStatus ? <p className="text-xs text-muted-foreground" role="status">{glassStatus}</p> : null}
-      </PrefSection>
-
-      <PrefSection title="Motion" description="In addition to the operating system setting.">
+      <PrefSection title="Motion">
         <PrefRow htmlFor="reduce-motion" title="Reduce motion" description="Cuts animations and transitions in the sidebar and the editor.">
           <Switch id="reduce-motion" checked={appearance.reduceMotion} onChange={(reduceMotion) => onChange({ reduceMotion })} />
         </PrefRow>
@@ -335,7 +337,7 @@ function AppearanceSection({
 function FilesSection({ vault, onPickFolder }: { vault: string; onPickFolder: () => void }) {
   return (
     <div className="space-y-8">
-      <SectionHeading title="Files" description="Each note is one Markdown file. Images sit next to them in assets." />
+
       <Card title="Notes folder" description="Changing the folder opens that vault.">
         <div className="flex gap-2">
           <input
@@ -353,15 +355,6 @@ function FilesSection({ vault, onPickFolder }: { vault: string; onPickFolder: ()
           </button>
         </div>
       </Card>
-    </div>
-  );
-}
-
-function SectionHeading({ title, description }: { title: string; description: string }) {
-  return (
-    <div>
-      <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-      <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
     </div>
   );
 }

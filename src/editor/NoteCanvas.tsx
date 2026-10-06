@@ -1,7 +1,7 @@
 import type { MilkdownPlugin } from "@milkdown/ctx";
 import { editorViewCtx, editorViewOptionsCtx, parserCtx } from "@milkdown/kit/core";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
-import { getMarkdown, replaceAll } from "@milkdown/kit/utils";
+import { getMarkdown } from "@milkdown/kit/utils";
 import { closeHistory } from "@milkdown/kit/prose/history";
 import { AllSelection, NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { CrepeBuilder } from "@milkdown/crepe/builder";
@@ -111,6 +111,13 @@ export function NoteCanvas({
     if (!readOnly) crepe.editor.use(renderedNodeNavigation).use(autocomplete(bridgeRef.current)).use(inlineEdit(bridgeRef.current)).use(editorShortcuts());
     let ready = false;
     let initialDoc: ProseNode | null = null;
+    // Keep exact source at whole-document format boundaries, including after Undo/Redo.
+    // Re-serializing the AST would normalize whitespace and protected Markdown.
+    const sources: { doc: ProseNode; source: string }[] = [];
+    const remember = (doc: ProseNode, source: string) => {
+      sources.push({ doc, source });
+      if (sources.length > 8) sources.shift();
+    };
     crepe.on((listener) => {
       listener.markdownUpdated((_ctx, next, prev) => {
         if (!ready || cancelled || next === prev) return;
@@ -144,12 +151,20 @@ export function NoteCanvas({
       editorHandle.current = handle;
     });
     const handle: EditorHandle = { getMarkdown: () => crepe.editor.action((ctx) => {
-      if (initialDoc?.eq(ctx.get(editorViewCtx).state.doc)) return markdown;
+      const doc = ctx.get(editorViewCtx).state.doc;
+      for (let i = sources.length - 1; i >= 0; i--) if (sources[i].doc.eq(doc)) return sources[i].source;
+      if (initialDoc?.eq(doc)) return markdown;
       return getMarkdown()(ctx);
     }), replaceMarkdown: (next: string) => crepe.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx);
+      const parsed = ctx.get(parserCtx)(next);
+      if (!parsed) throw new Error("Could not parse the formatted note.");
+      remember(view.state.doc, handle.getMarkdown());
+      remember(parsed, next);
       view.dispatch(closeHistory(view.state.tr));
-      replaceAll(next)(ctx);
+      // Parse once: Crepe can allocate different list-item attributes on each parse.
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, parsed.content));
+      remember(view.state.doc, next);
       view.dispatch(closeHistory(view.state.tr));
       onChangeRef.current(handle.getMarkdown());
       view.focus();
