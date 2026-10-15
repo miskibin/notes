@@ -17,25 +17,26 @@ export function boundarySelection(state: Pick<EditorState, "doc">, pos: number, 
   return Selection.near($pos, side);
 }
 
+// Native Home/End motion can precede selectionchange.
+// Read the visible caret before deciding what a deletion key touches.
+export function syncNativeCaret(view: EditorView): void {
+  if (!view.dom || !(view.state.selection instanceof TextSelection) || !view.state.selection.empty) return;
+  const native = view.dom.ownerDocument.getSelection();
+  if (!native?.anchorNode || !native.focusNode || !view.dom.contains(native.anchorNode) || !view.dom.contains(native.focusNode) ||
+    native.anchorNode.parentElement?.closest('[contenteditable="false"]') ||
+    native.focusNode.parentElement?.closest('[contenteditable="false"]')) return;
+  const anchor = view.posAtDOM(native.anchorNode, native.anchorOffset);
+  const head = view.posAtDOM(native.focusNode, native.focusOffset);
+  if (anchor !== view.state.selection.anchor || head !== view.state.selection.head) {
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, anchor, head)));
+  }
+}
+
 export function renderedNodeKeyDown(view: EditorView, event: KeyboardEvent): boolean {
   if (!view.editable || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return false;
   const target = event.target;
   if (target && target instanceof Element && target.closest("input, textarea, select, button")) return false;
-  // Native Home/End motion can precede selectionchange.
-  // Read the visible caret before deciding whether a neighboring object is hit.
-  if ((event.key === "Backspace" || event.key === "Delete") && view.dom &&
-    view.state.selection instanceof TextSelection && view.state.selection.empty) {
-    const native = view.dom.ownerDocument.getSelection();
-    if (native?.anchorNode && native.focusNode && view.dom.contains(native.anchorNode) && view.dom.contains(native.focusNode) &&
-      !native.anchorNode.parentElement?.closest('[contenteditable="false"]') &&
-      !native.focusNode.parentElement?.closest('[contenteditable="false"]')) {
-      const anchor = view.posAtDOM(native.anchorNode, native.anchorOffset);
-      const head = view.posAtDOM(native.focusNode, native.focusOffset);
-      if (anchor !== view.state.selection.anchor || head !== view.state.selection.head) {
-        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, anchor, head)));
-      }
-    }
-  }
+  if (event.key === "Backspace" || event.key === "Delete") syncNativeCaret(view);
   const { state } = view;
   const { selection } = state;
   const dir = ["ArrowLeft", "ArrowUp", "Backspace"].includes(event.key) ? -1 :

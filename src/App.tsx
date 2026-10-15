@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { NoteOutline, outlineHeadings, plainText } from "./NoteOutline";
 import { WindowControls } from "./WindowControls";
 import { AppHeader } from "./AppHeader";
 import { AppFooter } from "./AppFooter";
@@ -61,6 +62,7 @@ export default function App() {
   const [notes, setNotes] = useState<NoteFile[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [markdown, setMarkdown] = useState("");
+  const [outlineOpen, setOutlineOpen] = useState(() => { try { return localStorage.getItem("notes-outline") !== "off"; } catch { return true; } });
   const [filter, setFilter] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -429,6 +431,27 @@ export default function App() {
   };
 
   const headerTitle = active ? titleFrom(markdown, active) : "";
+  const headings = active ? outlineHeadings(noteBody(markdown)) : [];
+  const showOutline = outlineOpen && screen === "notes" && headings.length > 1;
+  const scrollToHeading = (index: number) => {
+    const heading = headings[index];
+    if (!heading) return;
+    if (sourceMode) { editorHandle.current?.revealText(heading.line); return; }
+    const elements = [...(scrollRef.current?.querySelectorAll<HTMLElement>(".note-canvas .ProseMirror :is(h1, h2, h3)") ?? [])];
+    // Match by text so headings inside lists or quotes do not shift the index.
+    const nth = headings.slice(0, index).filter(item => item.text === heading.text).length;
+    const target = elements.filter(element => plainText(element.textContent ?? "") === heading.text)[nth] ?? elements[index];
+    target?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+  const toggleOutline = () => setOutlineOpen(open => {
+    try { localStorage.setItem("notes-outline", open ? "off" : "on"); } catch { /* Preference only. */ }
+    return !open;
+  });
+  const revealNote = () => {
+    if (!active) return;
+    const vault = settings.vault.replace(/[\\/]+$/, "");
+    void revealItemInDir(`${vault}${vault.includes("\\") ? "\\" : "/"}${active}`).catch((error: unknown) => setLoadError(errorText(error)));
+  };
   const noteMetadata = readNoteMetadata(markdown);
   const backlinks = notes.filter((note) => note.name !== active && searchDocuments.some((document) => document.name === note.name && (
     readNoteMetadata(document.markdown).references.some((reference) => reference.noteId === noteMetadata.id) || wikiLinks(document.markdown).some((label) => label.toLocaleLowerCase() === headerTitle.toLocaleLowerCase())
@@ -709,7 +732,9 @@ export default function App() {
       />
       <main id="note-content" className="note-column" ref={columnRef}>
         <AppHeader title={headerTitle} screen={screen} sourceMode={sourceMode} onToggleSource={toggleSource} onNavigate={(next) => void navigate(next)}
-          onReference={() => setReferenceDialog("new")} onHistory={openHistory} />
+          onReference={() => setReferenceDialog("new")} onHistory={openHistory}
+          outline={headings.length > 1 ? outlineOpen : undefined} onToggleOutline={toggleOutline} onReveal={isTauri() && active ? revealNote : undefined} />
+        {showOutline ? <NoteOutline headings={headings} onSelect={scrollToHeading} /> : null}
         <div className={`note-scroll${screen === "settings" ? " note-scroll-settings" : ""}`} ref={scrollRef}>
         {!ready ? <p className="empty">Opening notes…</p> : null}
         {loadError ? <div className="error-line" role="alert"><span>{loadError}</span><button type="button" onClick={() => setLoadError(null)}>Dismiss</button></div> : null}

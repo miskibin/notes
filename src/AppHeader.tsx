@@ -1,4 +1,4 @@
-import { ArrowLeft, CodeXml, History, Link2 } from "lucide-react";
+import { ArrowLeft, CodeXml, FolderOpen, History, Link2, TableOfContents } from "lucide-react";
 import { isTauri } from "./vault-api";
 
 export function AppHeader({
@@ -9,6 +9,9 @@ export function AppHeader({
   onToggleSource,
   onReference,
   onHistory,
+  outline,
+  onToggleOutline,
+  onReveal,
 }: {
   title: string;
   screen: "notes" | "settings";
@@ -17,6 +20,10 @@ export function AppHeader({
   onToggleSource: () => void;
   onReference: () => void;
   onHistory: () => void;
+  /** Undefined hides the button: the note has too few headings. */
+  outline?: boolean;
+  onToggleOutline: () => void;
+  onReveal?: () => void;
 }) {
   return (
     <header className="app-header" data-tauri-drag-region>
@@ -33,6 +40,8 @@ export function AppHeader({
       <div className="app-header-spacer" data-tauri-drag-region />
       {screen === "notes" ? (
         <>
+        {outline !== undefined ? <button type="button" className="app-header-mode" aria-label="Outline" aria-pressed={outline} title="Outline" onClick={onToggleOutline}><TableOfContents aria-hidden /></button> : null}
+        {onReveal ? <button type="button" className="app-header-mode" aria-label="Show in folder" title="Show in folder" onClick={onReveal}><FolderOpen aria-hidden /></button> : null}
         <button type="button" className="app-header-mode" aria-label="Add reference" title="Add reference (Ctrl+Shift+L)" onClick={onReference}><Link2 aria-hidden /></button>
         <button type="button" className="app-header-mode" aria-label="History and recovery" title="History and recovery" onClick={onHistory}><History aria-hidden /></button>
         <button type="button" className="app-header-mode" aria-label="Markdown source" aria-pressed={sourceMode}

@@ -21,6 +21,7 @@ import { CHART_ICON, CHART_TEMPLATES } from "./chart-templates";
 import { attachHandleDelay } from "./handle-delay";
 import { inlineEdit } from "./inline-edit";
 import { mathPlugins } from "./math";
+import { markerDeletion } from "./mark-markers";
 import { markdownPaste } from "./paste";
 import { editorShortcuts } from "./shortcuts";
 import { imageDefaults } from "./images";
@@ -108,7 +109,7 @@ export function NoteCanvas({
       .use(flatPlugins(chartPlugins))
       .use(flatPlugins(wikiPlugins))
       .use(imageDefaults);
-    if (!readOnly) crepe.editor.use(renderedNodeNavigation).use(autocomplete(bridgeRef.current)).use(inlineEdit(bridgeRef.current)).use(editorShortcuts());
+    if (!readOnly) crepe.editor.use(markerDeletion).use(renderedNodeNavigation).use(autocomplete(bridgeRef.current)).use(inlineEdit(bridgeRef.current)).use(editorShortcuts());
     let ready = false;
     let initialDoc: ProseNode | null = null;
     // Keep exact source at whole-document format boundaries, including after Undo/Redo.
