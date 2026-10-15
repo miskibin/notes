@@ -43,11 +43,10 @@ jobs:
           releaseBody: |
             Windows x64 installer: download the file ending in `-setup.exe`.
 
-            - Structure only: local System One decisions add Markdown markers without rewriting note content; review the preview before Apply.
-            - Independent decision model setting, source-preserving Apply/Undo and native request cancellation.
-            - Simpler Settings, configurable Markdown marker opacity (default 55%), and removed frosted-glass experiment.
-            - New Notes logo included in the application, taskbar icon, installer and browser favicon.
-            - Includes the formula editing and streamed autocomplete fixes merged since 0.1.1.
+            - Backspace/Delete next to `~~`, `**`, `*` or a backtick removes one marker and leaves literal Markdown; retyping it restores the formatting.
+            - Outline on the right for notes with two or more headings; click to jump, header button to hide.
+            - Show in folder: reveal the current note file in Explorer.
+            - Block images resize by dragging the bar beneath them.
 
             Structure only requires Ollama >= 0.35 and compatible GGUF weights. Install manually: `ollama pull tev1:0.8b-q8_0` (alternative: `tev1:4b-q4_K_M`). Real model quality has not been benchmarked; the 0.8B model is a candidate, not a validated recommendation.
 
